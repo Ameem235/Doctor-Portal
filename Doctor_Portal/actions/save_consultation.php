@@ -27,8 +27,23 @@ require_once __DIR__ . '/../config/db.php';
 
 $doctor_id = $_SESSION['doctor_id'];
 
+// Helper function to allow filter_input mock in CLI tests
+if (!function_exists('get_post_val')) {
+    function get_post_val($key, $filter, $default = null) {
+        $val = filter_input(INPUT_POST, $key, $filter);
+        if ($val === null || $val === false) {
+            if (isset($_POST[$key])) {
+                $filtered = filter_var($_POST[$key], $filter);
+                return $filtered !== false ? $filtered : $default;
+            }
+            return $default;
+        }
+        return $val;
+    }
+}
+
 // Retrieve and validate appointment ID
-$appointment_id = filter_input(INPUT_POST, 'appointment_id', FILTER_VALIDATE_INT);
+$appointment_id = get_post_val('appointment_id', FILTER_VALIDATE_INT);
 if (!$appointment_id) {
     $_SESSION['error_msg'] = "Invalid appointment context.";
     header("Location: ../public/dashboard.php");
@@ -59,13 +74,13 @@ try {
 
     // 2. Retrieve Form Inputs
     $blood_pressure = trim($_POST['blood_pressure'] ?? '');
-    $temperature = $_POST['temperature'] !== '' ? filter_input(INPUT_POST, 'temperature', FILTER_VALIDATE_FLOAT) : null;
-    $heart_rate = $_POST['heart_rate'] !== '' ? filter_input(INPUT_POST, 'heart_rate', FILTER_VALIDATE_INT) : null;
-    $weight = $_POST['weight'] !== '' ? filter_input(INPUT_POST, 'weight', FILTER_VALIDATE_FLOAT) : null;
-    $oxygen_saturation = $_POST['oxygen_saturation'] !== '' ? filter_input(INPUT_POST, 'oxygen_saturation', FILTER_VALIDATE_INT) : null;
-    $pain_scale = filter_input(INPUT_POST, 'pain_scale', FILTER_VALIDATE_INT);
-    $height = $_POST['height'] !== '' ? filter_input(INPUT_POST, 'height', FILTER_VALIDATE_FLOAT) : null;
-    $respiratory_rate = $_POST['respiratory_rate'] !== '' ? filter_input(INPUT_POST, 'respiratory_rate', FILTER_VALIDATE_INT) : null;
+    $temperature = $_POST['temperature'] !== '' ? get_post_val('temperature', FILTER_VALIDATE_FLOAT) : null;
+    $heart_rate = $_POST['heart_rate'] !== '' ? get_post_val('heart_rate', FILTER_VALIDATE_INT) : null;
+    $weight = $_POST['weight'] !== '' ? get_post_val('weight', FILTER_VALIDATE_FLOAT) : null;
+    $oxygen_saturation = $_POST['oxygen_saturation'] !== '' ? get_post_val('oxygen_saturation', FILTER_VALIDATE_INT) : null;
+    $pain_scale = get_post_val('pain_scale', FILTER_VALIDATE_INT);
+    $height = $_POST['height'] !== '' ? get_post_val('height', FILTER_VALIDATE_FLOAT) : null;
+    $respiratory_rate = $_POST['respiratory_rate'] !== '' ? get_post_val('respiratory_rate', FILTER_VALIDATE_INT) : null;
 
     // Review of Systems (ROS) - 14 Systems
     $ros_fields = [
@@ -105,6 +120,7 @@ try {
     $physical_examination = trim($_POST['physical_examination'] ?? '');
     $narrative_diagnosis = trim($_POST['narrative_diagnosis'] ?? '');
     // Structured Clinical Treatment & Nursing Planning fields
+    $nrs_target_procedure = trim($_POST['nrs_target_procedure'] ?? '');
     $nrs_exam_date = trim($_POST['nrs_exam_date'] ?? '');
     $nrs_exam_doctor = trim($_POST['nrs_exam_doctor'] ?? '');
     $nrs_exam_findings = trim($_POST['nrs_exam_findings'] ?? '');
@@ -182,6 +198,7 @@ try {
     $nrs_changes_location = trim($_POST['nrs_changes_location'] ?? '');
     $nrs_changes_time = trim($_POST['nrs_changes_time'] ?? '');
     $nrs_tolerance = trim($_POST['nrs_tolerance'] ?? '');
+    $tolerance_val = $nrs_tolerance !== '' ? $nrs_tolerance : 'Not Tolerated';
     $nrs_tolerance_notes = trim($_POST['nrs_tolerance_notes'] ?? '');
     $nrs_post_vitals = trim($_POST['nrs_post_vitals'] ?? '');
 
@@ -200,6 +217,7 @@ try {
     $nrs_advisory_time = trim($_POST['nrs_advisory_time'] ?? '');
 
     $nursing_plan_array = [
+        'target_procedure' => $nrs_target_procedure,
         'exam_date' => $nrs_exam_date,
         'exam_doctor' => $nrs_exam_doctor,
         'exam_findings' => $nrs_exam_findings,
@@ -239,7 +257,7 @@ try {
         'changes_response' => $nrs_changes_response,
         'changes_location' => $nrs_changes_location,
         'changes_time' => $nrs_changes_time,
-        'tolerance' => $nrs_tolerance,
+        'tolerance' => $tolerance_val,
         'tolerance_notes' => $nrs_tolerance_notes,
         'post_vitals' => $nrs_post_vitals,
         'advisory_checklist' => [
@@ -293,8 +311,7 @@ try {
         $location_applied = implode(', ', array_unique($areas_list));
     }
 
-    // Session Tolerance
-    $tolerance_val = $nrs_tolerance !== '' ? $nrs_tolerance : 'Tolerated Well';
+    // Session Tolerance (already defined as $tolerance_val above)
 
     $summary_block = [];
     $summary_block[] = "Seen and examined by doctor: " . $seen_doctor;
@@ -475,7 +492,7 @@ try {
     $followup_enabled = !empty($_POST['followup_enabled']);
     $followup_date = $followup_enabled ? trim($_POST['followup_date'] ?? '') : null;
     $followup_time = $followup_enabled ? trim($_POST['followup_time'] ?? '') : null;
-    $followup_doctor_id = $followup_enabled ? filter_input(INPUT_POST, 'followup_doctor_id', FILTER_VALIDATE_INT) : null;
+    $followup_doctor_id = $followup_enabled ? get_post_val('followup_doctor_id', FILTER_VALIDATE_INT) : null;
     if (empty($followup_date)) { $followup_date = null; }
     if (empty($followup_time)) { $followup_time = null; }
     if (empty($followup_doctor_id)) { $followup_doctor_id = null; }
@@ -757,7 +774,7 @@ try {
         }
     }
 
-    // Step D: Update corresponding appointment status
+    // Step D: Update corresponding appointment status and consecutive slot reservation
     if ($submit_type === 'finalize') {
         $updateAppointmentQuery = "
             UPDATE appointments
@@ -766,6 +783,82 @@ try {
         ";
         $stmtUpdateAppointment = $pdo->prepare($updateAppointmentQuery);
         $stmtUpdateAppointment->execute([$appointment_id]);
+
+        // Consecutive slot reservation logic (Requirement 10)
+        $session_duration = get_post_val('session_duration', FILTER_VALIDATE_INT) ?: 0;
+        $slots_needed = ceil($session_duration / 1800); // 1800s = 30 minutes
+        if ($slots_needed > 1) {
+            // Retrieve appointment date, start time, and doctor ID
+            $stmtApptDetails = $pdo->prepare("SELECT doctor_id, appointment_date, appointment_time, patient_id FROM appointments WHERE appointment_id = ?");
+            $stmtApptDetails->execute([$appointment_id]);
+            $apptDetails = $stmtApptDetails->fetch();
+            if ($apptDetails) {
+                $doctor_id = $apptDetails['doctor_id'];
+                $appt_date = $apptDetails['appointment_date'];
+                $start_time = $apptDetails['appointment_time'];
+                $patient_id = $apptDetails['patient_id'];
+
+                // Recursive function to push conflicting appointments
+                if (!function_exists('moveAppointmentConflict')) {
+                    function moveAppointmentConflict($pdo, $doctor_id, $date, $time_str) {
+                        $stmtConflict = $pdo->prepare("
+                            SELECT appointment_id 
+                            FROM appointments 
+                            WHERE doctor_id = ? AND appointment_date = ? AND appointment_time = ? 
+                              AND status IN ('Scheduled', 'Accepted')
+                        ");
+                        $stmtConflict->execute([$doctor_id, $date, $time_str]);
+                        $conflict = $stmtConflict->fetch();
+                        
+                        if ($conflict) {
+                            $conflicting_id = $conflict['appointment_id'];
+                            $next_time_str = date('H:i:s', strtotime($time_str . ' +30 minutes'));
+                            
+                            // Cascading recursion
+                            moveAppointmentConflict($pdo, $doctor_id, $date, $next_time_str);
+                            
+                            // Move conflicting appointment to the resolved time
+                            $stmtUpdateConf = $pdo->prepare("UPDATE appointments SET appointment_time = ? WHERE appointment_id = ?");
+                            $stmtUpdateConf->execute([$next_time_str, $conflicting_id]);
+                            
+                            // Sync follow-up time if it was in the consultations table
+                            $stmtConsult = $pdo->prepare("SELECT consultation_id FROM consultations WHERE appointment_id = ?");
+                            $stmtConsult->execute([$conflicting_id]);
+                            $c_id = $stmtConsult->fetchColumn();
+                            if ($c_id) {
+                                $stmtUpdateConsult = $pdo->prepare("UPDATE consultations SET followup_time = ? WHERE consultation_id = ?");
+                                $stmtUpdateConsult->execute([$next_time_str, $c_id]);
+                            }
+                        }
+                    }
+                }
+
+                // Reserve next slots
+                $current_time = strtotime($start_time);
+                for ($s = 1; $s < $slots_needed; $s++) {
+                    $current_time = strtotime('+30 minutes', $current_time);
+                    $slot_time_str = date('H:i:s', $current_time);
+
+                    // Check if Completed placeholder already exists for this patient, doctor, date, and time
+                    $stmtCheckPlaceholder = $pdo->prepare("
+                        SELECT COUNT(*) FROM appointments 
+                        WHERE patient_id = ? AND doctor_id = ? AND appointment_date = ? AND appointment_time = ? AND status = 'Completed'
+                    ");
+                    $stmtCheckPlaceholder->execute([$patient_id, $doctor_id, $appt_date, $slot_time_str]);
+                    if ($stmtCheckPlaceholder->fetchColumn() == 0) {
+                        // Move any conflicting appointment recursively
+                        moveAppointmentConflict($pdo, $doctor_id, $appt_date, $slot_time_str);
+
+                        // Insert consecutive reserved placeholder slot for this user
+                        $stmtReserve = $pdo->prepare("
+                            INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, status)
+                            VALUES (?, ?, ?, ?, 'Completed')
+                        ");
+                        $stmtReserve->execute([$patient_id, $doctor_id, $appt_date, $slot_time_str]);
+                    }
+                }
+            }
+        }
     } else {
         $updateAppointmentQuery = "
             UPDATE appointments

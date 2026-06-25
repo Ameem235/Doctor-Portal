@@ -87,12 +87,75 @@ if (followupDoctorSelect) {
     });
 }
 
-// --- TIMER ---
+// --- TIMER & AUTO-EXTENSION ---
+let currentSlots = 1;
+let lastExtendedSlot = 1;
+let promptedSlots = {};
+
+function extendMockupSessionSlot() {
+    const upcomingSlot = currentSlots + 1;
+    const consult = window.db.getConsultationByAppointmentId(apptId) || {};
+    const elapsedSeconds = (upcomingSlot - 1) * 1800 + 1;
+    window.db.saveConsultation(apptId, { ...consult, session_duration: elapsedSeconds });
+    
+    lastExtendedSlot = upcomingSlot;
+    promptedSlots[upcomingSlot] = true;
+    
+    console.log('Mockup session extended successfully to slots:', upcomingSlot);
+    const timerBadge = document.getElementById('sessionTimerBadge');
+    if (timerBadge) {
+        timerBadge.title = `Consultation Session Active Timer - ${upcomingSlot} slot(s) reserved`;
+    }
+}
+
+// Confirm Button for extension modal
+const confirmBtn = document.getElementById('confirmExtensionBtn');
+if (confirmBtn) {
+    confirmBtn.onclick = function() {
+        extendMockupSessionSlot();
+        const modal = document.getElementById('extensionModal');
+        if (modal) modal.classList.add('hidden');
+    };
+}
+
+// Cancel Button for extension modal
+const cancelBtn = document.getElementById('cancelExtensionBtn');
+if (cancelBtn) {
+    cancelBtn.onclick = function() {
+        const upcomingSlot = currentSlots + 1;
+        promptedSlots[upcomingSlot] = true; // Mark prompted so we don't ask again
+        const modal = document.getElementById('extensionModal');
+        if (modal) modal.classList.add('hidden');
+    };
+}
+
 setInterval(() => {
     sessionSeconds++;
     const m = String(Math.floor(sessionSeconds / 60)).padStart(2, '0');
     const s = String(sessionSeconds % 60).padStart(2, '0');
     document.getElementById('sessionTimer').textContent = `${m}:${s}`;
+    const durationInput = document.getElementById('session_duration');
+    if (durationInput) {
+        durationInput.value = sessionSeconds;
+    }
+
+    // Check if current slot is about to end (e.g. 2 minutes / 120 seconds before 30 min boundary)
+    const upcomingSlot = currentSlots + 1;
+    const boundarySeconds = currentSlots * 1800;
+
+    if (sessionSeconds >= (boundarySeconds - 120) && sessionSeconds < boundarySeconds) {
+        if (!promptedSlots[upcomingSlot] && lastExtendedSlot < upcomingSlot) {
+            const modal = document.getElementById('extensionModal');
+            if (modal) {
+                modal.classList.remove('hidden');
+            }
+        }
+    }
+
+    // If they overrun the boundary (sessionSeconds > boundarySeconds), update currentSlots
+    if (sessionSeconds > boundarySeconds) {
+        currentSlots = Math.max(1, Math.ceil(sessionSeconds / 1800));
+    }
 }, 1000);
 
 // --- DRAWER NAVIGATION CONTROLS ---
@@ -1630,7 +1693,11 @@ if (draft) {
         toggleFollowup(followupCheck);
     }
     const followupDateEl = document.getElementById('followup_date');
-    if (followupDateEl) followupDateEl.value = draft.followup_date || '';
+    if (followupDateEl) {
+        followupDateEl.value = draft.followup_date || '';
+        if (followupDateEl.value) followupDateEl.type = 'date';
+        else followupDateEl.type = 'text';
+    }
     const followupTimeEl = document.getElementById('followup_time');
     if (followupTimeEl) {
         let fTime = draft.followup_time || '';
@@ -1638,6 +1705,8 @@ if (draft) {
             fTime = fTime.split(':').slice(0, 2).join(':'); // Format HH:MM
         }
         followupTimeEl.value = fTime;
+        if (followupTimeEl.value) followupTimeEl.type = 'time';
+        else followupTimeEl.type = 'text';
     }
     const followupDocEl = document.getElementById('followup_doctor_id');
     if (followupDocEl) followupDocEl.value = draft.followup_doctor_id || '';
@@ -2049,3 +2118,26 @@ document.querySelectorAll('[data-bs-toggle="tab"], [data-bs-toggle="pill"]').for
         }
     });
 });
+
+// --- Session Tolerance Checkbox Top Sync ---
+const topTolerated = document.getElementById('top_session_tolerated');
+const topBadge = document.getElementById('top_tolerance_badge');
+
+function syncToleranceFromCheckbox() {
+    if (!topTolerated || !topBadge) return;
+    if (topTolerated.checked) {
+        topBadge.innerText = "Yes";
+        topBadge.className = "text-xs font-semibold px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full";
+    } else {
+        topBadge.innerText = "No";
+        topBadge.className = "text-xs font-semibold px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full";
+    }
+}
+
+if (topTolerated) {
+    topTolerated.addEventListener('change', syncToleranceFromCheckbox);
+}
+
+// Run initial sync
+syncToleranceFromCheckbox();
+

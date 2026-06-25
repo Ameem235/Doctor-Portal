@@ -268,6 +268,21 @@ try {
     $activities = [];
 }
 
+// Fetch all patients for this doctor for patient history
+try {
+    $stmtDocPatients = $pdo->prepare("
+        SELECT DISTINCT p.patient_id, p.name, p.dob, p.gender 
+        FROM patients p
+        INNER JOIN appointments a ON p.patient_id = a.patient_id
+        WHERE a.doctor_id = ?
+        ORDER BY p.name ASC
+    ");
+    $stmtDocPatients->execute([$doctor_id]);
+    $doc_patients = $stmtDocPatients->fetchAll();
+} catch (PDOException $e) {
+    $doc_patients = [];
+}
+
 // Helper to calculate patient age
 function calculateAge($dob) {
     $birthDate = new DateTime($dob);
@@ -441,6 +456,32 @@ include_once __DIR__ . '/../includes/header.php';
             </div>
         </div>
         
+        <!-- Patient History Modal -->
+        <div id="patient-history-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl border border-hms-border w-full max-w-2xl overflow-hidden relative flex flex-col animate-fade-in" onclick="event.stopPropagation()">
+                <!-- Close button -->
+                <button type="button" onclick="closePatientHistoryModal()" class="absolute top-4 right-4 text-hms-muted hover:text-hms-dark text-xl font-bold transition focus:outline-none z-10">&times;</button>
+                
+                <!-- Header -->
+                <div class="bg-hms-panel p-5 border-b border-hms-border">
+                    <div class="flex items-start gap-4">
+                        <div class="w-10 h-10 rounded-full bg-hms-accent/15 text-hms-accent font-bold flex items-center justify-center text-xs font-serif" id="history-modal-avatar">
+                            PT
+                        </div>
+                        <div>
+                            <div id="history-modal-patient-name" class="font-serif font-bold text-base text-hms-dark leading-tight">Patient History</div>
+                            <div id="history-modal-dob-gender" class="text-xxs text-hms-muted mt-1 font-semibold">DOB: -- &middot; Gender: --</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Content Body (Visits list) -->
+                <div id="history-modal-visits" class="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+                    <!-- Loaded dynamically via AJAX -->
+                </div>
+            </div>
+        </div>
+        
         <!-- Left Sidebar: Mini Calendar and Waiting List -->
         <aside class="w-full md:w-[320px] bg-white border-r border-hms-border p-4 flex flex-col justify-between flex-shrink-0 overflow-y-auto">
             
@@ -519,15 +560,39 @@ include_once __DIR__ . '/../includes/header.php';
                 </div>
             </div>
 
+            <!-- Patient History / Directory (Requirement 1) -->
+            <div class="border-t border-hms-border pt-4 mt-6 flex flex-col flex-grow min-h-0 overflow-hidden">
+                <h4 class="font-serif text-sm font-bold text-hms-dark mb-2">Patient Directory</h4>
+                <!-- Search Input -->
+                <div class="mb-3 flex-shrink-0">
+                    <input type="text" id="patientSearchInput" placeholder="Filter patient directory..." class="w-full border border-hms-border rounded-lg px-3 py-2 text-xs outline-none focus:border-hms-accent bg-gray-50">
+                </div>
+                <!-- Patient Scrollable List -->
+                <div class="flex-grow overflow-y-auto min-h-[150px] border border-hms-border rounded-xl p-2 bg-gray-50/50 space-y-1" id="patientListContainer">
+                    <?php if (empty($doc_patients)): ?>
+                        <div class="text-hms-muted text-xxs italic p-2">No patients registered.</div>
+                    <?php else: ?>
+                        <?php foreach ($doc_patients as $p): ?>
+                            <button type="button" class="w-full text-left p-2.5 rounded-lg border border-transparent hover:border-hms-border hover:bg-white transition flex flex-col gap-0.5 patient-history-item" data-patient-id="<?php echo $p['patient_id']; ?>" data-patient-name="<?php echo htmlspecialchars($p['name']); ?>">
+                                <span class="font-semibold text-xs text-hms-dark"><?php echo htmlspecialchars($p['name']); ?></span>
+                                <span class="text-[10px] text-hms-muted">DOB: <?php echo date('d-M-Y', strtotime($p['dob'])); ?> &middot; <?php echo $p['gender']; ?></span>
+                            </button>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+
             <!-- Waiting List Area (Matches Screenshot) -->
-            <div class="border-t border-hms-border pt-4 mt-6">
-                <h4 class="font-serif text-sm font-bold text-hms-dark mb-1">Waiting List</h4>
-                <div class="text-hms-muted text-xxs font-medium mb-3 uppercase tracking-wider">No Data Found.</div>
+            <div class="border-t border-hms-border pt-4 mt-4 flex-shrink-0">
+                <h4 class="font-serif text-xs font-bold text-hms-dark mb-1">Waiting List</h4>
+                <div class="text-hms-muted text-[10px] font-medium mb-2 uppercase tracking-wider">No Data Found.</div>
                 
-                <div class="bg-hms-panel rounded-xl p-3 text-xxs border border-hms-border">
-                    <span class="font-bold text-hms-dark block">Reseed Database</span>
-                    <span class="text-hms-mid block mt-1 mb-2">Initialize or refresh mock clinical records to test the scheduler views.</span>
-                    <a href="setup.php" class="inline-block bg-white text-hms-accent border border-hms-border hover:bg-hms-accent hover:text-white transition rounded-full px-3.5 py-1 font-semibold uppercase no-underline">Seed Data</a>
+                <div class="bg-hms-panel border border-hms-border rounded-xl p-2.5 text-xxs flex justify-between items-center">
+                    <div>
+                        <span class="font-bold text-hms-dark block">Refreshed Database?</span>
+                        <span class="text-hms-muted block mt-0.5 text-[9px]">Reset and run tests.</span>
+                    </div>
+                    <a href="setup.php" class="inline-block bg-white text-hms-accent border border-hms-border hover:bg-hms-accent hover:text-white transition rounded-full px-3.5 py-1 font-semibold uppercase no-underline text-[9px] tracking-wide">Seed Data</a>
                 </div>
             </div>
         </aside>
@@ -945,6 +1010,168 @@ include_once __DIR__ . '/../includes/header.php';
         if (e.target === this) {
             closePatientModal();
         }
+    });
+
+    // Filter Patient Directory search
+    document.getElementById('patientSearchInput').addEventListener('input', function(e) {
+        const val = e.target.value.toLowerCase().trim();
+        const items = document.querySelectorAll('.patient-history-item');
+        items.forEach(function(item) {
+            const name = item.dataset.patientName.toLowerCase();
+            if (name.includes(val)) {
+                item.style.display = '';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    });
+
+    function openPatientHistoryModal(patientId) {
+        const modal = document.getElementById('patient-history-modal');
+        const visitsContainer = document.getElementById('history-modal-visits');
+        
+        // Clear previous visits and show loading
+        visitsContainer.innerHTML = '<div class="text-hms-muted text-xxs italic text-center py-4">Loading patient history...</div>';
+        
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        fetch('../actions/get_patient_history.php?patient_id=' + patientId)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    visitsContainer.innerHTML = `<div class="text-red-500 text-xxs font-semibold text-center py-4">${data.error}</div>`;
+                    return;
+                }
+                
+                // Populate Patient details header
+                const patient = data.patient;
+                document.getElementById('history-modal-patient-name').textContent = patient.name;
+                
+                // Initials for avatar
+                const words = patient.name.split(" ");
+                const initials = ((words[0] ? words[0][0] : '') + (words[1] ? words[1][0] : '')).toUpperCase();
+                document.getElementById('history-modal-avatar').textContent = initials || 'PT';
+                
+                // DOB & Gender formatting
+                const dob = new Date(patient.dob);
+                const dobFormatted = dob.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                document.getElementById('history-modal-dob-gender').textContent = `DOB: ${dobFormatted} | Gender: ${patient.gender}`;
+                
+                // Populate visits
+                const history = data.history;
+                if (!history || history.length === 0) {
+                    visitsContainer.innerHTML = '<div class="text-hms-muted text-xxs italic text-center py-4">No visit history found for this patient.</div>';
+                    return;
+                }
+                
+                visitsContainer.innerHTML = '';
+                history.forEach(visit => {
+                    const visitCard = document.createElement('div');
+                    visitCard.className = 'border border-hms-border rounded-xl p-4 bg-hms-panel flex flex-col gap-3 mb-3';
+                    
+                    let diagnosesHtml = '';
+                    if (visit.diagnoses && visit.diagnoses.length > 0) {
+                        diagnosesHtml = `
+                            <div class="mt-2">
+                                <span class="text-hms-muted text-[10px] font-bold uppercase tracking-wider block mb-1">Diagnoses (ICD-10)</span>
+                                <div class="flex flex-wrap gap-1">
+                                    ${visit.diagnoses.map(d => `<span class="bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded font-semibold border border-blue-200">${d.icd_code} - ${d.description}</span>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    let prescriptionsHtml = '';
+                    if (visit.prescriptions && visit.prescriptions.length > 0) {
+                        prescriptionsHtml = `
+                            <div class="mt-2">
+                                <span class="text-hms-muted text-[10px] font-bold uppercase tracking-wider block mb-1">Prescriptions</span>
+                                <div class="space-y-1">
+                                    ${visit.prescriptions.map(p => `
+                                        <div class="bg-green-50 border border-green-200 text-green-800 text-[11px] p-2 rounded flex flex-col gap-0.5">
+                                            <span class="font-bold">${p.medicine_name}</span>
+                                            <span class="text-[10px] text-green-700">${p.dosage} &middot; ${p.duration} &middot; Instructions: ${p.instructions || 'None'}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    let testsHtml = '';
+                    if (visit.tests && visit.tests.length > 0) {
+                        testsHtml = `
+                            <div class="mt-2">
+                                <span class="text-hms-muted text-[10px] font-bold uppercase tracking-wider block mb-1">Lab / Radiology Tests</span>
+                                <div class="flex flex-wrap gap-1.5">
+                                    ${visit.tests.map(t => `<span class="bg-gray-150 border border-gray-300 text-hms-dark text-[10px] px-2 py-0.5 rounded font-semibold">${t.test_name} (${t.category}) - ${t.status}</span>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    // Case Sheet link
+                    let caseSheetLinkHtml = '';
+                    if (visit.appt_status === 'Completed' || (visit.consultation_id && visit.consult_status === 'Completed')) {
+                        caseSheetLinkHtml = `
+                            <div class="mt-2 pt-2 border-t border-hms-border flex justify-end">
+                                <a href="view_consultation.php?appointment_id=${visit.appointment_id}" class="inline-block bg-white border border-hms-accent text-hms-accent hover:bg-hms-accent hover:text-white transition rounded-full px-3.5 py-1 font-semibold uppercase no-underline text-[10px] tracking-wide">View Case Sheet</a>
+                            </div>
+                        `;
+                    }
+                    
+                    const dateVal = visit.appointment_date + 'T' + visit.appointment_time;
+                    const dateObj = new Date(dateVal.replace(/-/g, '/').replace('T', ' '));
+                    const formattedDate = isNaN(dateObj.getTime()) ? (visit.appointment_date + ' ' + visit.appointment_time) : dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    
+                    visitCard.innerHTML = `
+                        <div class="flex justify-between items-center pb-2 border-b border-hms-border">
+                            <span class="font-serif font-bold text-xs text-hms-dark">${formattedDate}</span>
+                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${visit.appt_status === 'Completed' ? 'bg-green-150 text-green-700 border border-green-200' : 'bg-yellow-100 text-yellow-700 border border-yellow-200'}">${visit.appt_status}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3 text-[11px] leading-relaxed">
+                            <div>
+                                <span class="text-hms-muted text-[10px] font-bold uppercase tracking-wider block">Chief Complaint</span>
+                                <span class="text-hms-dark font-medium">${visit.chief_complaint}</span>
+                            </div>
+                            <div>
+                                <span class="text-hms-muted text-[10px] font-bold uppercase tracking-wider block">Clinical Summary / Diagnosis</span>
+                                <span class="text-hms-dark font-medium">${visit.narrative_diagnosis}</span>
+                            </div>
+                        </div>
+                        ${diagnosesHtml}
+                        ${prescriptionsHtml}
+                        ${testsHtml}
+                        ${caseSheetLinkHtml}
+                    `;
+                    visitsContainer.appendChild(visitCard);
+                });
+            })
+            .catch(err => {
+                visitsContainer.innerHTML = `<div class="text-red-500 text-xxs font-semibold text-center py-4">Failed to load patient history: ${err.message}</div>`;
+            });
+    }
+
+    function closePatientHistoryModal() {
+        const modal = document.getElementById('patient-history-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('patient-history-modal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closePatientHistoryModal();
+        }
+    });
+
+    // Add click listeners to patient list directory items
+    document.querySelectorAll('.patient-history-item').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const patientId = this.dataset.patientId;
+            openPatientHistoryModal(patientId);
+        });
     });
 </script>
 

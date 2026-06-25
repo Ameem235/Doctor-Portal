@@ -277,6 +277,7 @@ try {
 
         $insertAppt = $pdo->prepare("INSERT INTO `appointments` (`patient_id`, `doctor_id`, `appointment_date`, `appointment_time`, `status`) VALUES (?, ?, ?, ?, 'Scheduled')");
         $insertAppt->execute([$patientId, $doctorId, $data['appt_date'], $data['appt_time']]);
+
     }
 
     $setupSuccess = true;

@@ -392,6 +392,245 @@ try {
     }
     echo "Verification passed: Follow-up appointment successfully deleted on uncheck.\n\n";
 
+    // Insert a dummy completed appointment and finalized consultation for patient history verification
+    $stmtPastAppt = $pdo->prepare("INSERT INTO `appointments` (`patient_id`, `doctor_id`, `appointment_date`, `appointment_time`, `status`) VALUES (?, ?, ?, ?, 'Completed')");
+    $stmtPastAppt->execute([$test_patient_id, $test_doctor_id, '2026-06-15', '09:30:00']);
+    $pastApptId = $pdo->lastInsertId();
+
+    $stmtPastConsult = $pdo->prepare("INSERT INTO `consultations` (`appointment_id`, `blood_pressure`, `temperature`, `heart_rate`, `weight`, `oxygen_saturation`, `pain_scale`, `chief_complaint`, `narrative_diagnosis`, `status`, `height`, `respiratory_rate`) VALUES (?, '118/78', 36.7, 70, 70.2, 99, 0, 'Follow up on Acne', 'Mild improvement. Patient tolerating Adapalene well.', 'Finalized', 175.0, 16)");
+    $stmtPastConsult->execute([$pastApptId]);
+    $pastConsultId = $pdo->lastInsertId();
+
+    $pdo->prepare("INSERT INTO `consultation_diagnoses` (`consultation_id`, `icd_code`, `description`) VALUES (?, 'L70.0', 'Acne vulgaris')")->execute([$pastConsultId]);
+    $pdo->prepare("INSERT INTO `consultation_prescriptions` (`consultation_id`, `medicine_name`, `dosage`, `duration`, `instructions`) VALUES (?, 'Adapalene 0.1% Gel', 'Apply thin layer daily at bedtime', '30 days', 'Continue as directed.')")->execute([$pastConsultId]);
+
+    // 6. Verifying custom patient history JSON endpoint
+    echo "6. Verifying custom patient history JSON endpoint...\n";
+    $test_history_script = __DIR__ . '/test_history_tmp.php';
+    file_put_contents($test_history_script, '<?php
+        error_reporting(0);
+        ini_set("display_errors", "0");
+        session_start();
+        $_SESSION["doctor_id"] = 1;
+        $_GET["patient_id"] = ' . $test_patient_id . ';
+        include "actions/get_patient_history.php";
+    ');
+    $json_output = shell_exec("php " . escapeshellarg($test_history_script) . " 2>&1");
+    if (file_exists($test_history_script)) {
+        unlink($test_history_script);
+    }
+
+    $history_response = json_decode($json_output, true);
+    if (!$history_response) {
+        throw new Exception("Patient history API did not return valid JSON. Output: " . $json_output);
+    }
+    if (isset($history_response['error'])) {
+        throw new Exception("Patient history API returned error: " . $history_response['error']);
+    }
+    if (!isset($history_response['patient']) || !isset($history_response['history'])) {
+        throw new Exception("Patient history API response missing 'patient' or 'history' key.");
+    }
+    if ($history_response['patient']['patient_id'] != $test_patient_id) {
+        throw new Exception("Patient history API returned patient_id {$history_response['patient']['patient_id']}, expected {$test_patient_id}");
+    }
+    if (empty($history_response['history'])) {
+        throw new Exception("Patient history API history list is empty.");
+    }
+    echo "Verification passed: Patient history API returned valid structured JSON and correct patient records.\n\n";
+
+    // 7. Verifying cascading conflict resolution and consecutive slot reservation
+    echo "7. Verifying cascading conflict resolution and consecutive slot reservation...\n";
+    $today_date = date('Y-m-d');
+    $pdo->prepare("UPDATE appointments SET appointment_date = ?, appointment_time = ?, status = 'Accepted' WHERE appointment_id = 4")->execute([$today_date, '10:30:00']);
+    $pdo->prepare("UPDATE appointments SET appointment_date = ?, appointment_time = ?, status = 'Scheduled' WHERE appointment_id = 5")->execute([$today_date, '11:00:00']);
+    $pdo->prepare("UPDATE appointments SET appointment_date = ?, appointment_time = ?, status = 'Scheduled' WHERE appointment_id = 6")->execute([$today_date, '11:30:00']);
+
+    // Run save_consultation.php in a subprocess to isolate its exit() behavior
+    $test_save_script = __DIR__ . '/test_save_tmp.php';
+    file_put_contents($test_save_script, '<?php
+        error_reporting(0);
+        ini_set("display_errors", "0");
+        session_start();
+        register_shutdown_function(function() {
+            if (isset($_SESSION["error_msg"])) {
+                echo "SESSION_ERROR_MSG: " . $_SESSION["error_msg"] . "\n";
+            }
+        });
+        $_SERVER["REQUEST_METHOD"] = "POST";
+        $_SESSION["doctor_id"] = 1;
+        $_POST = [
+            "appointment_id" => 4,
+            "submit_type" => "finalize",
+            "nrs_target_procedure" => "IPL / Laser Hair Removal",
+            "session_duration" => 3600, // 60 minutes -> 2 slots: 10:30 and 11:00
+            "blood_pressure" => "120/80",
+            "temperature" => 36.8,
+            "heart_rate" => 72,
+            "weight" => 70.5,
+            "oxygen_saturation" => 98,
+            "pain_scale" => 0,
+            "height" => 175.50,
+            "respiratory_rate" => 18,
+            "chief_complaint" => "Checkup",
+            "narrative_diagnosis" => "Patient is doing well.",
+            "hpi_location" => "General",
+            "hpi_duration" => "1 day",
+            "icd_code" => ["Z00.00"],
+            "icd_description" => ["General medical examination"]
+        ];
+        include "actions/save_consultation.php";
+    ');
+
+    $output = shell_exec("php " . escapeshellarg($test_save_script) . " 2>&1");
+    if (file_exists($test_save_script)) {
+        unlink($test_save_script);
+    }
+
+    // Verify appointment 4 status is Completed
+    $stmt = $pdo->prepare("SELECT status FROM appointments WHERE appointment_id = 4");
+    $stmt->execute();
+    if ($stmt->fetchColumn() !== 'Completed') {
+        throw new Exception("Expected appointment 4 to be Completed. Subprocess Output: " . $output);
+    }
+
+    // Verify target_procedure was saved in the database
+    $stmt = $pdo->prepare("SELECT nursing_plan FROM consultations WHERE appointment_id = 4");
+    $stmt->execute();
+    $saved_nursing_plan_json = $stmt->fetchColumn();
+    $saved_nursing_plan = json_decode($saved_nursing_plan_json, true);
+    if (($saved_nursing_plan['target_procedure'] ?? '') !== 'IPL / Laser Hair Removal') {
+        throw new Exception("Expected target_procedure to be saved as 'IPL / Laser Hair Removal', got: " . ($saved_nursing_plan['target_procedure'] ?? 'null') . ". Subprocess Output: " . $output);
+    }
+
+    // Verify a new completed placeholder appointment exists at 11:00:00
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE doctor_id = 1 AND appointment_date = ? AND appointment_time = ? AND status = 'Completed'");
+    $stmt->execute([$today_date, '11:00:00']);
+    if ($stmt->fetchColumn() < 1) {
+        throw new Exception("Consecutive slot for 11:00:00 was not reserved.");
+    }
+
+    // Verify appointment 5 (Aisha Khan) was shifted to 11:30:00
+    $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_id = 5");
+    $stmt->execute();
+    $appt5_time = $stmt->fetchColumn();
+    if (strtotime($appt5_time) !== strtotime('11:30:00')) {
+        throw new Exception("Expected appointment 5 to be shifted to 11:30:00, got " . $appt5_time);
+    }
+
+    // Verify appointment 6 (Sana Mir) was shifted to 12:00:00
+    $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_id = 6");
+    $stmt->execute();
+    $appt6_time = $stmt->fetchColumn();
+    if (strtotime($appt6_time) !== strtotime('12:00:00')) {
+        throw new Exception("Expected appointment 6 to be shifted to 12:00:00, got " . $appt6_time);
+    }
+
+    echo "Verification passed: Consecutive slot reserved and conflicts shifted recursively.\n";
+    echo "Verification passed: target_procedure saved successfully inside the nursing_plan JSON column.\n\n";
+
+    // 8. Verifying real-time auto-extension and duplicate slot reservation prevention
+    echo "8. Verifying real-time auto-extension and duplicate slot reservation prevention...\n";
+    $today_date = date('Y-m-d');
+    
+    // Reset database to ensure clean slate for this test
+    $pdo->prepare("UPDATE appointments SET status = 'Accepted', appointment_date = ?, appointment_time = ? WHERE appointment_id = 4")->execute([$today_date, '10:30:00']);
+    $pdo->prepare("UPDATE appointments SET status = 'Scheduled', appointment_date = ?, appointment_time = ? WHERE appointment_id = 5")->execute([$today_date, '11:00:00']);
+    $pdo->prepare("UPDATE appointments SET status = 'Scheduled', appointment_date = ?, appointment_time = ? WHERE appointment_id = 6")->execute([$today_date, '11:30:00']);
+    
+    // Delete any Completed slots created from previous tests to avoid interference
+    $pdo->prepare("DELETE FROM appointments WHERE status = 'Completed' AND appointment_id > 10")->execute();
+
+    // Run auto_extend_appointment.php in a subprocess
+    $test_extend_script = __DIR__ . '/test_extend_tmp.php';
+    file_put_contents($test_extend_script, '<?php
+        error_reporting(0);
+        ini_set("display_errors", "0");
+        session_start();
+        $_SESSION["doctor_id"] = 1;
+        $_POST = [
+            "appointment_id" => 4,
+            "session_duration" => 3600 // 60 minutes -> requires 11:00 slot
+        ];
+        include "actions/auto_extend_appointment.php";
+    ');
+
+    $extend_output = shell_exec("php " . escapeshellarg($test_extend_script) . " 2>&1");
+    if (file_exists($test_extend_script)) {
+        unlink($test_extend_script);
+    }
+
+    $extend_res = json_decode($extend_output, true);
+    if (!$extend_res || !isset($extend_res['success']) || !$extend_res['success']) {
+        throw new Exception("Real-time auto-extension AJAX request failed. Output: " . $extend_output);
+    }
+
+    // Verify a Completed placeholder appointment was created at 11:00:00
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE doctor_id = 1 AND appointment_date = ? AND appointment_time = ? AND status = 'Completed'");
+    $stmt->execute([$today_date, '11:00:00']);
+    if ($stmt->fetchColumn() < 1) {
+        throw new Exception("Real-time auto-extension did not reserve consecutive slot for 11:00:00.");
+    }
+
+    // Verify appointment 5 (Aisha Khan) was shifted to 11:30:00
+    $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_id = 5");
+    $stmt->execute();
+    $appt5_time = $stmt->fetchColumn();
+    if (strtotime($appt5_time) !== strtotime('11:30:00')) {
+        throw new Exception("Auto-extension failed to shift conflicting appointment 5 to 11:30:00, got " . $appt5_time);
+    }
+
+    // Now run save_consultation.php to finalize, which should not create duplicate slots
+    $test_save_dup_script = __DIR__ . '/test_save_dup_tmp.php';
+    file_put_contents($test_save_dup_script, '<?php
+        error_reporting(0);
+        ini_set("display_errors", "0");
+        session_start();
+        $_SERVER["REQUEST_METHOD"] = "POST";
+        $_SESSION["doctor_id"] = 1;
+        $_POST = [
+            "appointment_id" => 4,
+            "submit_type" => "finalize",
+            "session_duration" => 3600, // Same 60 minutes
+            "blood_pressure" => "120/80",
+            "temperature" => 36.8,
+            "heart_rate" => 72,
+            "weight" => 70.5,
+            "oxygen_saturation" => 98,
+            "pain_scale" => 0,
+            "height" => 175.50,
+            "respiratory_rate" => 18,
+            "chief_complaint" => "Checkup",
+            "narrative_diagnosis" => "Patient is doing well.",
+            "hpi_location" => "General",
+            "hpi_duration" => "1 day",
+            "icd_code" => ["Z00.00"],
+            "icd_description" => ["General medical examination"]
+        ];
+        include "actions/save_consultation.php";
+    ');
+
+    $save_dup_output = shell_exec("php " . escapeshellarg($test_save_dup_script) . " 2>&1");
+    if (file_exists($test_save_dup_script)) {
+        unlink($test_save_dup_script);
+    }
+
+    // Verify appointment 4 is Completed
+    $stmt = $pdo->prepare("SELECT status FROM appointments WHERE appointment_id = 4");
+    $stmt->execute();
+    if ($stmt->fetchColumn() !== 'Completed') {
+        throw new Exception("Finalization failed after auto-extension. Output: " . $save_dup_output);
+    }
+
+    // Verify there is still only 1 completed placeholder appointment at 11:00:00 (no duplicate slot reserved)
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE doctor_id = 1 AND appointment_date = ? AND appointment_time = ? AND status = 'Completed'");
+    $stmt->execute([$today_date, '11:00:00']);
+    $placeholder_count = $stmt->fetchColumn();
+    if ($placeholder_count != 1) {
+        throw new Exception("Duplicate reservation slot created at 11:00:00. Count: " . $placeholder_count);
+    }
+
+    echo "Verification passed: Real-time auto-extension and duplicate prevention checked successfully.\n\n";
+
     echo "ALL WORKFLOW DB CHECKS PASSED SUCCESSFULLY!\n";
 
 } catch (Exception $e) {

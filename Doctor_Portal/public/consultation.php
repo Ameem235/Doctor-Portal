@@ -10,8 +10,9 @@
  * Emoji-Free Version with MedCore UI/UX styling.
  */
 
-// Start session
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Verify doctor authentication
 if (!isset($_SESSION['doctor_id'])) {
@@ -20,7 +21,7 @@ if (!isset($_SESSION['doctor_id'])) {
 }
 
 // Check for appointment_id in GET parameters
-$appointment_id = filter_input(INPUT_GET, 'appointment_id', FILTER_VALIDATE_INT);
+$appointment_id = filter_input(INPUT_GET, 'appointment_id', FILTER_VALIDATE_INT) ?: (filter_var($_GET['appointment_id'] ?? null, FILTER_VALIDATE_INT) ?: null);
 if (!$appointment_id) {
     $_SESSION['error_msg'] = "Invalid appointment ID.";
     header("Location: dashboard.php");
@@ -101,6 +102,8 @@ try {
         $stmt = $pdo->prepare("SELECT * FROM consultation_tests WHERE consultation_id = ?");
         $stmt->execute([$c_id]);
         $existing_tests = $stmt->fetchAll();
+    } else {
+        $existing_consultation = [];
     }
 
     $ros_draft = [];
@@ -319,6 +322,7 @@ include_once __DIR__ . '/../includes/navbar.php';
             <form action="../actions/save_consultation.php" method="POST" id="consultationForm" novalidate>
                 <!-- Hidden field passing appointment context -->
                 <input type="hidden" name="appointment_id" value="<?php echo $appointment_id; ?>">
+                <input type="hidden" name="session_duration" id="session_duration" value="0">
 
                 <div class="bg-white border border-hms-border rounded-xl p-6 shadow-sm">
                     
@@ -1023,155 +1027,160 @@ include_once __DIR__ . '/../includes/navbar.php';
                         <div class="tab-pane fade" id="medications-pane" role="tabpanel" aria-labelledby="drawer-medications-tab">
                             <h4 class="font-serif text-lg font-semibold text-hms-accent mb-4 border-b border-hms-border pb-1">Prescriptions &amp; Treatment Plan</h4>
                             
-                            <!-- Clickable Medication Formulary -->
-                            <div class="mb-6 bg-hms-panel border border-hms-border rounded-xl p-4 shadow-sm">
-                                <div class="flex items-center gap-2 mb-3 pb-1.5 border-b border-hms-border">
-                                    <h5 class="font-serif font-bold text-hms-dark text-sm">Medication Formulary Presets</h5>
-                                    <span class="text-[10px] bg-hms-accent/15 text-hms-accent font-bold px-2 py-0.5 rounded">Quick Add</span>
-                                </div>
-                                <div class="mb-4 pb-3 border-b border-hms-border">
-                                    <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Common Case Prescription Bundles</div>
-                                    <div class="flex flex-wrap gap-2">
-                                        <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="flu">
-                                            Acute Fever / Flu Case Bundle
-                                        </button>
-                                        <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="cold">
-                                            Common Cold Case Bundle
-                                        </button>
-                                        <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="gastro">
-                                            Gastroenteritis Case Bundle
-                                        </button>
-                                        <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="htn">
-                                            Hypertension Case Bundle
-                                        </button>
-                                        <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="diabetes">
-                                            Diabetes Case Bundle
-                                        </button>
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <!-- Left Column: Clickable Medication Formulary -->
+                                <div class="bg-hms-panel border border-hms-border rounded-xl p-4 shadow-sm flex flex-col gap-4">
+                                    <div class="flex items-center gap-2 pb-1.5 border-b border-hms-border">
+                                        <h5 class="font-serif font-bold text-hms-dark text-sm">Medication Formulary Presets</h5>
+                                        <span class="text-[10px] bg-hms-accent/15 text-hms-accent font-bold px-2 py-0.5 rounded">Quick Add</span>
                                     </div>
-                                </div>
-                                <div class="space-y-4">
-                                    <!-- Therapeutic Classes -->
-                                    <div>
-                                        <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Analgesics &amp; Antipyretics</div>
+                                    
+                                    <div class="pb-3 border-b border-hms-border">
+                                        <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Common Case Prescription Bundles</div>
                                         <div class="flex flex-wrap gap-2">
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Paracetamol 500mg" data-dosage="1 tablet three times daily" data-duration="5 days" data-inst="Take after meals.">
-                                                Paracetamol
+                                            <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="flu">
+                                                Acute Fever / Flu Case Bundle
                                             </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Ibuprofen 400mg" data-dosage="1 tablet twice daily" data-duration="5 days" data-inst="Take with food or milk to prevent stomach upset.">
-                                                Ibuprofen
+                                            <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="cold">
+                                                Common Cold Case Bundle
                                             </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Tramadol 50mg" data-dosage="1 capsule every 6 hours as needed for severe pain" data-duration="3 days" data-inst="May cause drowsiness. Avoid driving or operating machinery.">
-                                                Tramadol
+                                            <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="gastro">
+                                                Gastroenteritis Case Bundle
+                                            </button>
+                                            <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="htn">
+                                                Hypertension Case Bundle
+                                            </button>
+                                            <button type="button" class="med-bundle-btn px-3 py-1.5 bg-hms-accent text-white rounded-full text-xs font-semibold hover:bg-hms-accentDim transition duration-150" data-bundle="diabetes">
+                                                Diabetes Case Bundle
                                             </button>
                                         </div>
                                     </div>
-                                    <div>
-                                        <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Antibiotics</div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Amoxicillin 500mg" data-dosage="1 capsule three times daily" data-duration="7 days" data-inst="Complete the full course as prescribed.">
-                                                Amoxicillin
-                                            </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Azithromycin 500mg" data-dosage="1 tablet daily" data-duration="3 days" data-inst="Take 1 hour before or 2 hours after meals.">
-                                                Azithromycin
-                                            </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Ciprofloxacin 500mg" data-dosage="1 tablet twice daily" data-duration="7 days" data-inst="Avoid taking with dairy products or antacids. Drink plenty of water.">
-                                                Ciprofloxacin
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Antihypertensives &amp; Cardiovascular</div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Amlodipine 5mg" data-dosage="1 tablet once daily" data-duration="30 days" data-inst="Take at the same time every morning.">
-                                                Amlodipine
-                                            </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Lisinopril 10mg" data-dosage="1 tablet once daily" data-duration="30 days" data-inst="Monitor blood pressure regularly. Report dry cough if it develops.">
-                                                Lisinopril
-                                            </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Atorvastatin 20mg" data-dosage="1 tablet at bedtime" data-duration="30 days" data-inst="Take at night. Avoid grapefruit juice.">
-                                                Atorvastatin
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Antidiabetics</div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Metformin 500mg" data-dosage="1 tablet twice daily with meals" data-duration="30 days" data-inst="Take with breakfast and dinner.">
-                                                Metformin
-                                            </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Glimepiride 2mg" data-dosage="1 tablet once daily before breakfast" data-duration="30 days" data-inst="Monitor for symptoms of hypoglycemia.">
-                                                Glimepiride
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Gastrointestinal &amp; Others</div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Omeprazole 20mg" data-dosage="1 capsule daily 30 mins before breakfast" data-duration="14 days" data-inst="Take on an empty stomach first thing in the morning.">
-                                                Omeprazole
-                                            </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Cetirizine 10mg" data-dosage="1 tablet daily at bedtime" data-duration="10 days" data-inst="Take at night. May cause minor drowsiness.">
-                                                Cetirizine
-                                            </button>
-                                            <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
-                                                    data-med="Multivitamin" data-dosage="1 tablet daily" data-duration="30 days" data-inst="Take after breakfast.">
-                                                Multivitamin
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="flex justify-between items-center mb-4">
-                                <label class="text-xs font-semibold text-hms-dark">Medications List</label>
-                                <button type="button" class="border border-hms-accent text-hms-accent hover:bg-hms-accent hover:text-white rounded px-3 py-1.5 text-xs font-semibold tracking-wide transition duration-150" id="addMedicineBtn">Add Medicine</button>
-                            </div>
-
-                            <div id="prescriptionsContainer">
-                                <!-- Dynamic Medicine rows go here -->
-                                <?php if (!empty($existing_prescriptions)): ?>
-                                    <?php foreach ($existing_prescriptions as $idx => $pres): ?>
-                                        <div class="prescription-row border border-hms-border p-4 rounded-xl mb-4 bg-hms-bg">
-                                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end mb-3">
-                                                <div class="md:col-span-4">
-                                                    <label class="block text-xxs font-bold text-hms-mid mb-1">Medicine Name</label>
-                                                    <input type="text" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent" name="medicine_name[]" placeholder="e.g., Amoxicillin 500mg" value="<?php echo htmlspecialchars($pres['medicine_name']); ?>" required>
-                                                </div>
-                                                <div class="md:col-span-4">
-                                                    <label class="block text-xxs font-bold text-hms-mid mb-1">Dosage / Frequency</label>
-                                                    <input type="text" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent" name="medicine_dosage[]" placeholder="e.g., 1 tablet three times daily" value="<?php echo htmlspecialchars($pres['dosage']); ?>" required>
-                                                </div>
-                                                <div class="md:col-span-3">
-                                                    <label class="block text-xxs font-bold text-hms-mid mb-1">Duration</label>
-                                                    <input type="text" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent" name="medicine_duration[]" placeholder="e.g., 7 days" value="<?php echo htmlspecialchars($pres['duration']); ?>" required>
-                                                </div>
-                                                <div class="md:col-span-1">
-                                                    <button type="button" class="w-full border border-red-200 text-red-500 hover:bg-red-500 hover:text-white rounded-lg py-2.5 text-sm font-semibold remove-medicine-btn transition duration-150" title="Delete Prescription">×</button>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label class="block text-xxs font-bold text-hms-muted mb-1">Special Instructions</label>
-                                                <textarea class="w-full border border-hms-border rounded-lg p-2 text-xs outline-none focus:border-hms-accent" name="medicine_instructions[]" rows="1" placeholder="e.g., Take after meals, avoid alcohol..."><?php echo htmlspecialchars($pres['instructions'] ?? ''); ?></textarea>
+                                    
+                                    <div class="space-y-4">
+                                        <!-- Therapeutic Classes -->
+                                        <div>
+                                            <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Analgesics &amp; Antipyretics</div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Paracetamol 500mg" data-dosage="1 tablet three times daily" data-duration="5 days" data-inst="Take after meals.">
+                                                    Paracetamol
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Ibuprofen 400mg" data-dosage="1 tablet twice daily" data-duration="5 days" data-inst="Take with food or milk to prevent stomach upset.">
+                                                    Ibuprofen
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Tramadol 50mg" data-dosage="1 capsule every 6 hours as needed for severe pain" data-duration="3 days" data-inst="May cause drowsiness. Avoid driving or operating machinery.">
+                                                    Tramadol
+                                                </button>
                                             </div>
                                         </div>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
+                                        <div>
+                                            <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Antibiotics</div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Amoxicillin 500mg" data-dosage="1 capsule three times daily" data-duration="7 days" data-inst="Complete the full course as prescribed.">
+                                                    Amoxicillin
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Azithromycin 500mg" data-dosage="1 tablet daily" data-duration="3 days" data-inst="Take 1 hour before or 2 hours after meals.">
+                                                    Azithromycin
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Ciprofloxacin 500mg" data-dosage="1 tablet twice daily" data-duration="7 days" data-inst="Avoid taking with dairy products or antacids. Drink plenty of water.">
+                                                    Ciprofloxacin
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Antihypertensives &amp; Cardiovascular</div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Amlodipine 5mg" data-dosage="1 tablet once daily" data-duration="30 days" data-inst="Take at the same time every morning.">
+                                                    Amlodipine
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Lisinopril 10mg" data-dosage="1 tablet once daily" data-duration="30 days" data-inst="Monitor blood pressure regularly. Report dry cough if it develops.">
+                                                    Lisinopril
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Atorvastatin 20mg" data-dosage="1 tablet at bedtime" data-duration="30 days" data-inst="Take at night. Avoid grapefruit juice.">
+                                                    Atorvastatin
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Antidiabetics</div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Metformin 500mg" data-dosage="1 tablet twice daily with meals" data-duration="30 days" data-inst="Take with breakfast and dinner.">
+                                                    Metformin
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Glimepiride 2mg" data-dosage="1 tablet once daily before breakfast" data-duration="30 days" data-inst="Monitor for symptoms of hypoglycemia.">
+                                                    Glimepiride
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="text-[11px] font-bold text-hms-mid uppercase tracking-wider mb-2">Gastrointestinal &amp; Others</div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Omeprazole 20mg" data-dosage="1 capsule daily 30 mins before breakfast" data-duration="14 days" data-inst="Take on an empty stomach first thing in the morning.">
+                                                    Omeprazole
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Cetirizine 10mg" data-dosage="1 tablet daily at bedtime" data-duration="10 days" data-inst="Take at night. May cause minor drowsiness.">
+                                                    Cetirizine
+                                                </button>
+                                                <button type="button" class="med-pill px-3 py-1.5 bg-white border border-hms-border hover:border-hms-accent hover:bg-hms-accent/5 rounded-full text-xs font-semibold text-hms-dark transition duration-150" 
+                                                        data-med="Multivitamin" data-dosage="1 tablet daily" data-duration="30 days" data-inst="Take after breakfast.">
+                                                    Multivitamin
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Right Column: Active Medications List -->
+                                <div class="bg-white border border-hms-border rounded-xl p-4 shadow-sm flex flex-col">
+                                    <div class="flex justify-between items-center mb-4 pb-1.5 border-b border-hms-border">
+                                        <label class="font-serif font-bold text-hms-dark text-sm">Active Medications List</label>
+                                        <button type="button" class="border border-hms-accent text-hms-accent hover:bg-hms-accent hover:text-white rounded px-3 py-1.5 text-xs font-semibold tracking-wide transition duration-150" id="addMedicineBtn">Add Medicine</button>
+                                    </div>
+                                    
+                                    <div id="prescriptionsContainer" class="flex-grow overflow-y-auto max-h-[600px] pr-2">
+                                        <!-- Dynamic Medicine rows go here -->
+                                        <?php if (!empty($existing_prescriptions)): ?>
+                                            <?php foreach ($existing_prescriptions as $idx => $pres): ?>
+                                                <div class="prescription-row border border-hms-border p-4 rounded-xl mb-4 bg-hms-bg">
+                                                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end mb-3">
+                                                        <div class="md:col-span-4">
+                                                            <label class="block text-xxs font-bold text-hms-mid mb-1">Medicine Name</label>
+                                                            <input type="text" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent" name="medicine_name[]" placeholder="e.g., Amoxicillin 500mg" value="<?php echo htmlspecialchars($pres['medicine_name']); ?>" required>
+                                                        </div>
+                                                        <div class="md:col-span-4">
+                                                            <label class="block text-xxs font-bold text-hms-mid mb-1">Dosage / Frequency</label>
+                                                            <input type="text" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent" name="medicine_dosage[]" placeholder="e.g., 1 tablet three times daily" value="<?php echo htmlspecialchars($pres['dosage']); ?>" required>
+                                                        </div>
+                                                        <div class="md:col-span-3">
+                                                            <label class="block text-xxs font-bold text-hms-mid mb-1">Duration</label>
+                                                            <input type="text" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent" name="medicine_duration[]" placeholder="e.g., 7 days" value="<?php echo htmlspecialchars($pres['duration']); ?>" required>
+                                                        </div>
+                                                        <div class="md:col-span-1">
+                                                            <button type="button" class="w-full border border-red-200 text-red-500 hover:bg-red-500 hover:text-white rounded-lg py-2.5 text-sm font-semibold remove-medicine-btn transition duration-150" title="Delete Prescription">×</button>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xxs font-bold text-hms-muted mb-1">Special Instructions</label>
+                                                        <textarea class="w-full border border-hms-border rounded-lg p-2 text-xs outline-none focus:border-hms-accent" name="medicine_instructions[]" rows="1" placeholder="e.g., Take after meals, avoid alcohol..."><?php echo htmlspecialchars($pres['instructions'] ?? ''); ?></textarea>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
                             </div>
-
-
 
                             <div class="flex justify-between mt-6 pt-4 border-t border-hms-border">
                                 <button type="button" class="border border-hms-border text-hms-mid hover:bg-gray-50 rounded-lg px-6 py-2.5 text-sm font-semibold transition duration-150" onclick="goToTab('diagnosis')">Back</button>
@@ -1284,248 +1293,223 @@ include_once __DIR__ . '/../includes/navbar.php';
                             <!-- Sub-tab Navigation -->
                             <ul class="nav nav-tabs mb-4 text-xs font-semibold" id="nursingSubTabList" role="tablist">
                                 <li class="nav-item" role="presentation">
-                                    <button class="nav-link active" id="nrs-exam-tab" data-bs-toggle="tab" data-bs-target="#nrs-exam-pane" type="button" role="tab">1. Seen &amp; Examined by Doctor (Report Section)</button>
+                                    <button class="nav-link active" id="nrs-prep-tab" data-bs-toggle="tab" data-bs-target="#nrs-prep-pane" type="button" role="tab">6.1 — Pre-Treatment Prep &amp; Doctor Assessment</button>
                                 </li>
                                 <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="nrs-prep-tab" data-bs-toggle="tab" data-bs-target="#nrs-prep-pane" type="button" role="tab">2. Preparation for Patient (Report Section)</button>
+                                    <button class="nav-link" id="nrs-treatment-tab" data-bs-toggle="tab" data-bs-target="#nrs-treatment-pane" type="button" role="tab">6.2 — Clinical Treatment &amp; Session Tolerance</button>
                                 </li>
                                 <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="nrs-treatment-tab" data-bs-toggle="tab" data-bs-target="#nrs-treatment-pane" type="button" role="tab">3. Clinical Treatment (Special Procedure, Location &amp; Session Tolerance)</button>
-                                </li>
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="nrs-advisory-tab" data-bs-toggle="tab" data-bs-target="#nrs-advisory-pane" type="button" role="tab">4. Advisory Measures (Report Section)</button>
+                                    <button class="nav-link" id="nrs-advisory-tab" data-bs-toggle="tab" data-bs-target="#nrs-advisory-pane" type="button" role="tab">6.3 — Advisory Measures &amp; Discharge Plan</button>
                                 </li>
                             </ul>
 
                             <div class="tab-content" id="nursingSubTabContent">
 
-                                <!-- NRS SUB-TAB 1: Doctor Examination Records -->
-                                <div class="tab-pane fade show active" id="nrs-exam-pane" role="tabpanel">
-                                    <div class="bg-hms-panel border border-hms-border rounded-xl p-5 mb-4">
+                                <!-- Tab 6.1: Pre-Treatment Prep & Doctor Assessment -->
+                                <div class="tab-pane fade show active" id="nrs-prep-pane" role="tabpanel">
+                                    
+                                    <!-- A. Doctor Assessment Fields -->
+                                    <div class="bg-hms-panel border border-hms-border rounded-xl p-5 mb-4 shadow-sm">
                                         <h5 class="font-serif font-bold text-hms-accent text-sm mb-3 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:1rem;height:1rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                                            Doctor Examination Records
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                            Doctor Examination &amp; Assessment Records
                                         </h5>
-                                        <p class="text-hms-muted text-xs mb-4">Record the doctor's examination findings and observations as documented for nursing reference.</p>
                                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                             <div>
-                                                <label for="nrs_exam_date" class="block text-xs font-semibold text-hms-mid mb-1">Examination Date &amp; Time</label>
-                                                <input type="datetime-local" id="nrs_exam_date" name="nrs_exam_date" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white" value="<?php echo htmlspecialchars($nursing_plan['exam_date'] ?? ''); ?>">
+                                                <label for="nrs_exam_doctor" class="block text-xs font-semibold text-hms-mid mb-1">Examining Doctor Name</label>
+                                                <input type="text" id="nrs_exam_doctor" name="nrs_exam_doctor" placeholder="e.g., Dr. Ahmed Khan" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white" value="<?php echo htmlspecialchars(!empty($nursing_plan['exam_doctor']) ? $nursing_plan['exam_doctor'] : ($_SESSION['doctor_name'] ?? '')); ?>">
                                             </div>
                                             <div>
-                                                <label for="nrs_exam_doctor" class="block text-xs font-semibold text-hms-mid mb-1">Examining Doctor</label>
-                                                <input type="text" id="nrs_exam_doctor" name="nrs_exam_doctor" placeholder="e.g., Dr. Ahmed Khan" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white" value="<?php echo htmlspecialchars($nursing_plan['exam_doctor'] ?? ''); ?>">
-                                                <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Seen &amp; Examined by Doctor: Yes - by [Doctor Name]" in report</span>
+                                                <label for="nrs_exam_date" class="block text-xs font-semibold text-hms-mid mb-1">Examination Date &amp; Time</label>
+                                                <input type="<?php echo !empty($nursing_plan['exam_date']) ? 'datetime-local' : 'text'; ?>" id="nrs_exam_date" name="nrs_exam_date" placeholder="Click here" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white cursor-pointer" value="<?php echo htmlspecialchars($nursing_plan['exam_date'] ?? ''); ?>" onfocus="this.type='datetime-local'; if(!this.value){ const d = new Date(); const pad = (n) => String(n).padStart(2, '0'); this.value = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); } try { this.showPicker(); } catch(e) {}" onclick="this.type='datetime-local'; if(!this.value){ const d = new Date(); const pad = (n) => String(n).padStart(2, '0'); this.value = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); } try { this.showPicker(); } catch(e) {}" onblur="if(!this.value){ this.type='text'; }">
                                             </div>
                                         </div>
-                                        <div class="mb-4">
-                                            <label for="nrs_exam_findings" class="block text-xs font-semibold text-hms-mid mb-1">Examination Findings</label>
-                                            <textarea id="nrs_exam_findings" name="nrs_exam_findings" rows="4" placeholder="Record the physician's key examination findings, diagnosis summary, and clinical instructions for nursing staff..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['exam_findings'] ?? ''); ?></textarea>
-                                            <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Doctor Examination Findings: [Findings]" in report</span>
+                                        <div class="mb-0">
+                                            <label for="nrs_exam_findings" class="block text-xs font-semibold text-hms-mid mb-1">Doctor Examination Findings</label>
+                                            <textarea id="nrs_exam_findings" name="nrs_exam_findings" rows="3" placeholder="Record physician's key examination findings, instruction details, etc..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['exam_findings'] ?? ''); ?></textarea>
                                         </div>
-                                        <div class="mb-4">
-                                            <label for="nrs_exam_orders" class="block text-xs font-semibold text-hms-mid mb-1">Doctor's Orders / Nursing Instructions</label>
-                                            <textarea id="nrs_exam_orders" name="nrs_exam_orders" rows="3" placeholder="Specific orders from the physician to nursing staff (e.g., Monitor BP every 2 hrs, Restrict fluids to 1L/day)..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['exam_orders'] ?? ''); ?></textarea>
-                                            <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Doctor's Orders / Instructions: [Orders]" in report</span>
+                                    </div>
+
+                                    <!-- B. Skin Assessment & Core Trigger Dropdown -->
+                                    <div class="bg-white border border-hms-border rounded-xl p-5 mb-4 shadow-sm">
+                                        
+                                        <!-- Skin Assessment Section (preserved for data model completeness) -->
+                                        <div class="border-b border-hms-border pb-4 mb-4">
+                                            <div class="flex items-center gap-2 mb-3">
+                                                <input type="checkbox" id="prep_assessment_done" name="prep_assessment_done" class="w-4 h-4 accent-hms-accent rounded cursor-pointer" <?php echo !empty($nursing_plan['prep_assessment_done']) ? 'checked' : ''; ?>>
+                                                <label for="prep_assessment_done" class="text-xs font-bold text-hms-dark cursor-pointer select-none">Skin Assessment done</label>
+                                            </div>
+                                            <div class="mb-2">
+                                                <label for="nrs_prep_skin_type" class="block text-xs font-semibold text-hms-mid mb-1">Skin Type &amp; Details</label>
+                                                <input type="text" id="nrs_prep_skin_type" name="nrs_prep_skin_type" placeholder="e.g., Skin type - 3 thin - medium hairs" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white" value="<?php echo htmlspecialchars($nursing_plan['prep_skin_type'] ?? ''); ?>">
+                                            </div>
+                                            <div class="flex flex-wrap gap-1.5 mt-2 items-center">
+                                                <span class="text-[10px] font-bold text-hms-muted mr-1">Quick Presets:</span>
+                                                <button type="button" class="prep-skin-preset px-2.5 py-1 bg-gray-50 border border-hms-border hover:bg-hms-accent hover:text-white hover:border-hms-accent rounded text-[10px] font-semibold text-hms-dark transition" data-val="Skin type - 3 thin - medium hairs">Skin Type III (Thin-Med)</button>
+                                                <button type="button" class="prep-skin-preset px-2.5 py-1 bg-gray-50 border border-hms-border hover:bg-hms-accent hover:text-white hover:border-hms-accent rounded text-[10px] font-semibold text-hms-dark transition" data-val="Skin type - 4 medium - thick hairs">Skin Type IV (Med-Thick)</button>
+                                                <button type="button" class="prep-skin-preset px-2.5 py-1 bg-gray-50 border border-hms-border hover:bg-hms-accent hover:text-white hover:border-hms-accent rounded text-[10px] font-semibold text-hms-dark transition" data-val="Skin type - 2 thin hairs">Skin Type II (Thin)</button>
+                                            </div>
                                         </div>
+
+                                        <!-- Core Dynamic Trigger Dropdown -->
+                                        <div class="mb-4">
+                                            <label for="nrs_target_procedure" class="block text-xs font-bold text-hms-accent mb-1.5 uppercase tracking-wide">Select Targeted Treatment Procedure</label>
+                                            <?php $selected_proc = $nursing_plan['target_procedure'] ?? ''; ?>
+                                            <select id="nrs_target_procedure" name="nrs_target_procedure" class="w-full border border-hms-border rounded-lg p-2.5 text-sm font-semibold outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white">
+                                                <option value="">-- Click to Select targeted procedure presets --</option>
+                                                <option value="Rhinoplasty / Liposuction / Facelift / Tummy Tuck" <?php echo $selected_proc === 'Rhinoplasty / Liposuction / Facelift / Tummy Tuck' ? 'selected' : ''; ?>>Rhinoplasty / Liposuction / Facelift / Tummy Tuck (Surgical)</option>
+                                                <option value="Botox / Dysport / Dermal Fillers / Sculptra" <?php echo $selected_proc === 'Botox / Dysport / Dermal Fillers / Sculptra' ? 'selected' : ''; ?>>Botox / Dysport / Dermal Fillers / Sculptra (Injectable)</option>
+                                                <option value="Fractional CO2 Laser / Softlight Laser Peel" <?php echo $selected_proc === 'Fractional CO2 Laser / Softlight Laser Peel' ? 'selected' : ''; ?>>Fractional CO2 Laser / Softlight Laser Peel (Laser)</option>
+                                                <option value="IPL / Laser Hair Removal" <?php echo $selected_proc === 'IPL / Laser Hair Removal' ? 'selected' : ''; ?>>IPL / Laser Hair Removal (Laser Hair)</option>
+                                                <option value="Mesotherapy / Microneedling / Chemical Peels" <?php echo $selected_proc === 'Mesotherapy / Microneedling / Chemical Peels' ? 'selected' : ''; ?>>Mesotherapy / Microneedling / Chemical Peels (Skin Resurfacing)</option>
+                                                <option value="PRP Treatment (Platelet-Rich Plasma)" <?php echo $selected_proc === 'PRP Treatment (Platelet-Rich Plasma)' ? 'selected' : ''; ?>>PRP Treatment (Platelet-Rich Plasma) (PRP)</option>
+                                            </select>
+                                        </div>
+
+                                        <!-- Pre-Treatment Checklist Grid (13-item wrapper) -->
                                         <div>
-                                            <label for="nrs_exam_vitals_note" class="block text-xs font-semibold text-hms-mid mb-1">Nursing Vitals Observation Note</label>
-                                            <textarea id="nrs_exam_vitals_note" name="nrs_exam_vitals_note" rows="2" placeholder="Nurse's observations of patient vitals during examination (e.g., BP 130/85, HR 88, SpO2 97%)..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['exam_vitals_note'] ?? ''); ?></textarea>
-                                            <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Doctor's Vitals Observation: [Note]" in report</span>
-                                        </div>
-                                    </div>
-                                    <div class="flex justify-end mt-4">
-                                        <button type="button" class="border-0 bg-hms-accent hover:bg-hms-accentDim text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition duration-150" onclick="goToSubTab('nrs-prep-tab')">Continue to Patient Preparation &rarr;</button>
-                                    </div>
-                                </div>
-
-                                <!-- NRS SUB-TAB 2: Preparation for Patient -->
-                                <div class="tab-pane fade" id="nrs-prep-pane" role="tabpanel">
-                                    <div class="bg-hms-panel border border-hms-border rounded-xl p-5 mb-4">
-                                        <h5 class="font-serif font-bold text-hms-accent text-sm mb-3 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:1rem;height:1rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
-                                            Preparation for Patient
-                                        </h5>
-                                        <p class="text-hms-muted text-xs mb-4">Document all preparatory steps taken by nursing staff before initiating treatment.</p>
-
-                                        <div class="bg-white border border-hms-border rounded-xl p-4 mb-4">
-                                            <!-- Skin Assessment Section -->
-                                            <div class="border-b border-hms-border pb-4 mb-4">
-                                                <div class="flex items-center gap-2 mb-3">
-                                                    <input type="checkbox" id="prep_assessment_done" name="prep_assessment_done" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_assessment_done']) ? 'checked' : ''; ?>>
-                                                    <label for="prep_assessment_done" class="text-xs font-bold text-hms-dark cursor-pointer select-none">Skin Assessment done</label>
-                                                </div>
-                                                <div class="mb-2">
-                                                    <label for="nrs_prep_skin_type" class="block text-xs font-semibold text-hms-mid mb-1">Skin Type &amp; Details</label>
-                                                    <input type="text" id="nrs_prep_skin_type" name="nrs_prep_skin_type" placeholder="e.g., Skin type - 3 thin - medium hairs" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white" value="<?php echo htmlspecialchars($nursing_plan['prep_skin_type'] ?? ''); ?>">
-                                                </div>
-                                                <div class="flex flex-wrap gap-1.5 mt-2 items-center">
-                                                    <span class="text-[10px] font-bold text-hms-muted mr-1">Quick Presets:</span>
-                                                    <button type="button" class="prep-skin-preset px-2.5 py-1 bg-gray-50 border border-hms-border hover:bg-hms-accent hover:text-white hover:border-hms-accent rounded text-[10px] font-semibold text-hms-dark transition" data-val="Skin type - 3 thin - medium hairs">Skin Type III (Thin-Med)</button>
-                                                    <button type="button" class="prep-skin-preset px-2.5 py-1 bg-gray-50 border border-hms-border hover:bg-hms-accent hover:text-white hover:border-hms-accent rounded text-[10px] font-semibold text-hms-dark transition" data-val="Skin type - 4 medium - thick hairs">Skin Type IV (Med-Thick)</button>
-                                                    <button type="button" class="prep-skin-preset px-2.5 py-1 bg-gray-50 border border-hms-border hover:bg-hms-accent hover:text-white hover:border-hms-accent rounded text-[10px] font-semibold text-hms-dark transition" data-val="Skin type - 2 thin hairs">Skin Type II (Thin)</button>
-                                                </div>
-                                            </div>
-
                                             <div class="flex justify-between items-center mb-3">
                                                 <label class="block text-xs font-semibold text-hms-mid">Pre-Treatment Checklist</label>
                                                 <button type="button" id="btnSelectStandardPrep" class="border border-hms-accent text-hms-accent hover:bg-hms-accent hover:text-white rounded px-2.5 py-1 text-xxs font-semibold transition">Select Standard Prep</button>
                                             </div>
-                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_procedure_explained" name="prep_procedure_explained" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['procedure_explained']) ? 'checked' : ''; ?>>
-                                                    <span>Explained the procedure and possible outcome of the treatment</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_consent" name="prep_consent" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['consent']) ? 'checked' : ''; ?>>
-                                                    <span>Consent signed and secured</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_goggles_provided" name="prep_goggles_provided" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['goggles_provided']) ? 'checked' : ''; ?>>
-                                                    <span>Protective eye goggles provided</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_markings_shaving" name="prep_markings_shaving" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['markings_shaving']) ? 'checked' : ''; ?>>
-                                                    <span>Markings and shaving done</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_id_verified" name="prep_id_verified" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['id_verified']) ? 'checked' : ''; ?>>
-                                                    <span>Patient identity verified (wristband)</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_allergies_checked" name="prep_allergies_checked" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['allergies_checked']) ? 'checked' : ''; ?>>
-                                                    <span>Allergies reviewed &amp; confirmed</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_fasting" name="prep_fasting" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['fasting']) ? 'checked' : ''; ?>>
-                                                    <span>Fasting / dietary status confirmed</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_iv_access" name="prep_iv_access" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['iv_access']) ? 'checked' : ''; ?>>
-                                                    <span>IV access / cannula established</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_positioning" name="prep_positioning" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['positioning']) ? 'checked' : ''; ?>>
-                                                    <span>Patient positioned appropriately</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_monitoring" name="prep_monitoring" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['monitoring']) ? 'checked' : ''; ?>>
-                                                    <span>Monitoring equipment connected</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_emergency_kit" name="prep_emergency_kit" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['emergency_kit']) ? 'checked' : ''; ?>>
-                                                    <span>Emergency kit &amp; resuscitation available</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_baseline_vitals" name="prep_baseline_vitals" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['baseline_vitals']) ? 'checked' : ''; ?>>
-                                                    <span>Baseline vitals recorded pre-treatment</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="prep_labwork" name="prep_labwork" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['prep_checklist']['labwork']) ? 'checked' : ''; ?>>
-                                                    <span>Required lab work completed</span>
-                                                </label>
-                                            </div>
-                                            <span class="text-hms-muted text-[10px] block mt-3">→ Selected pre-treatment options list under "Preparation" in printed report</span>
-                                        </div>
+                                            
+                                            <!-- 13-item grid exactly styled in cards -->
+                                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                <!-- 1. Patient identity verified -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_id_verified" name="prep_id_verified" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['id_verified']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_id_verified" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Patient identity verified (wristband)</label>
+                                                    </div>
+                                                </div>
 
-                                        <div class="mb-4">
-                                            <label for="nrs_prep_notes" class="block text-xs font-semibold text-hms-mid mb-1">Additional Preparation Notes</label>
-                                            <textarea id="nrs_prep_notes" name="nrs_prep_notes" rows="3" placeholder="Any additional notes regarding preparation steps, patient's pre-treatment condition, or special arrangements made..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['prep_notes'] ?? ''); ?></textarea>
-                                            <div class="flex flex-wrap gap-1.5 mt-2 items-center">
-                                                <span class="text-[10px] font-bold text-hms-muted mr-1">Quick Presets:</span>
-                                                <button type="button" class="prep-note-preset px-2.5 py-1 bg-gray-50 border border-hms-border hover:bg-hms-accent hover:text-white hover:border-hms-accent rounded text-[10px] font-semibold text-hms-dark transition" data-val="Been doing laser many times in other clinic">Laser in other clinic</button>
-                                                <button type="button" class="prep-note-preset px-2.5 py-1 bg-gray-50 border border-hms-border hover:bg-hms-accent hover:text-white hover:border-hms-accent rounded text-[10px] font-semibold text-hms-dark transition" data-val="Patient has no complaints, skin normal.">Stable &amp; Normal</button>
-                                            </div>
-                                            <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Prep Notes" in printed report</span>
-                                        </div>
+                                                <!-- 2. Consent signed -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_consent" name="prep_consent" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['consent']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_consent" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Consent signed and secured</label>
+                                                    </div>
+                                                </div>
 
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label for="nrs_prep_nurse" class="block text-xs font-semibold text-hms-mid mb-1">Prepared By (Nurse Name)</label>
-                                                <input type="text" id="nrs_prep_nurse" name="nrs_prep_nurse" placeholder="e.g., Nurse Fatima Malik" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white" value="<?php echo htmlspecialchars($nursing_plan['prep_nurse'] ?? ''); ?>">
-                                                <span class="text-hms-muted text-[10px] block mt-1">→ Maps to Nurse signature on report if advisory signature is empty</span>
-                                            </div>
-                                            <div>
-                                                <label for="nrs_prep_time" class="block text-xs font-semibold text-hms-mid mb-1">Preparation Completed At</label>
-                                                <input type="time" id="nrs_prep_time" name="nrs_prep_time" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10" value="<?php echo htmlspecialchars($nursing_plan['prep_time'] ?? ''); ?>">
+                                                <!-- 3. Allergies reviewed -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_allergies_checked" name="prep_allergies_checked" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['allergies_checked']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_allergies_checked" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Allergies reviewed &amp; confirmed</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 4. Explained procedure -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_procedure_explained" name="prep_procedure_explained" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['procedure_explained']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_procedure_explained" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Explained procedure &amp; outcomes</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 5. Patient positioned -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_positioning" name="prep_positioning" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['positioning']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_positioning" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Patient positioned appropriately</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 6. Emergency kit available -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_emergency_kit" name="prep_emergency_kit" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['emergency_kit']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_emergency_kit" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Emergency kit &amp; resuscitation available</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 7. Fasting confirmed -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_fasting" name="prep_fasting" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['fasting']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_fasting" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Fasting / dietary status confirmed</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 8. IV access established -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_iv_access" name="prep_iv_access" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['iv_access']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_iv_access" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">IV access / cannula established</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 9. Monitoring equipment connected -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_monitoring" name="prep_monitoring" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['monitoring']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_monitoring" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Monitoring equipment connected</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 10. Baseline vitals recorded -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_baseline_vitals" name="prep_baseline_vitals" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['baseline_vitals']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_baseline_vitals" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Baseline vitals recorded pre-treatment</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 11. Required lab work completed -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_labwork" name="prep_labwork" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['labwork']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_labwork" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Required lab work completed</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 12. Markings and shaving done -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_markings_shaving" name="prep_markings_shaving" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['markings_shaving']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_markings_shaving" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Markings and shaving done</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 13. Protective goggles provided -->
+                                                <div class="prep-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="prep_goggles_provided" name="prep_goggles_provided" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['prep_checklist']['goggles_provided']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="prep_goggles_provided" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Protective eye goggles provided</label>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="flex justify-between mt-4">
-                                        <button type="button" class="border border-hms-border text-hms-mid hover:bg-gray-50 rounded-lg px-6 py-2.5 text-sm font-semibold transition duration-150" onclick="goToSubTab('nrs-exam-tab')">&larr; Back</button>
-                                        <button type="button" class="border-0 bg-hms-accent hover:bg-hms-accentDim text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition duration-150" onclick="goToSubTab('nrs-treatment-tab')">Continue to Treatment &rarr;</button>
+
+
+
+                                    <!-- Navigation Action -->
+                                    <div class="flex justify-end mt-4">
+                                        <button type="button" class="border-0 bg-hms-accent hover:bg-hms-accentDim text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition duration-150" onclick="goToSubTab('nrs-treatment-tab')">Continue to Clinical Parameters &rarr;</button>
                                     </div>
                                 </div>
 
-                                <!-- NRS SUB-TAB 3: Treatment -->
+                                <!-- Tab 6.2: Clinical Treatment & Session Tolerance -->
                                 <div class="tab-pane fade" id="nrs-treatment-pane" role="tabpanel">
 
-                                    <!-- 3.1 Medication -->
-                                    <div class="bg-hms-panel border border-hms-border rounded-xl p-5 mb-4">
-                                        <h5 class="font-serif font-bold text-hms-accent text-sm mb-1 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:1rem;height:1rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
-                                            3.1 — Medication Administered
-                                        </h5>
-                                        <p class="text-hms-muted text-xs mb-3">Record all medications given during the treatment session including dose, route, and time administered.</p>
-                                        <span class="text-hms-muted text-[10px] block mb-3">→ Administered medications list under "Medications Administered" in printed report</span>
-                                        <div class="flex justify-end mb-3">
-                                            <button type="button" class="border border-hms-accent text-hms-accent hover:bg-hms-accent hover:text-white rounded px-3 py-1.5 text-xs font-semibold tracking-wide transition duration-150" id="addNursingMedBtn">+ Add Medication</button>
+                                    <!-- Session Tolerated Well Top Checkbox -->
+                                    <div class="mb-4 bg-white border border-hms-border rounded-xl p-4 flex items-center justify-between shadow-sm">
+                                        <div class="flex items-center gap-3">
+                                            <input type="checkbox" id="top_session_tolerated" name="nrs_tolerance" value="Tolerated Well" class="w-5 h-5 accent-hms-accent rounded cursor-pointer" <?php echo (($nursing_plan['tolerance'] ?? 'Tolerated Well') === 'Tolerated Well') ? 'checked' : ''; ?>>
+                                            <div>
+                                                <label for="top_session_tolerated" class="text-sm font-bold text-hms-dark cursor-pointer select-none">Session Tolerated Well</label>
+                                                <span class="text-hms-muted text-[10px] block">Quick check if the patient tolerated the procedure without any issues.</span>
+                                            </div>
                                         </div>
-                                        <div id="nursingMedContainer" class="space-y-3 mb-2">
-                                            <?php 
-                                            $meds_given = $nursing_plan['medications_given'] ?? [];
-                                            if (!empty($meds_given)):
-                                                foreach ($meds_given as $mIndex => $m):
-                                            ?>
-                                                <div class="nursing-med-row border border-hms-border p-3.5 rounded-xl bg-white mb-3">
-                                                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end mb-2">
-                                                        <div class="md:col-span-3">
-                                                            <label class="block text-xxs font-bold text-hms-mid mb-1">Medicine Name</label>
-                                                            <input type="text" class="w-full border border-hms-border rounded-lg p-2.5 text-xs outline-none focus:border-hms-accent nrs-med-name" name="nrs_med_name[]" placeholder="e.g., Metronidazole 500mg" value="<?php echo htmlspecialchars($m['name'] ?? ''); ?>">
-                                                        </div>
-                                                        <div class="md:col-span-2">
-                                                            <label class="block text-xxs font-bold text-hms-mid mb-1">Dose</label>
-                                                            <input type="text" class="w-full border border-hms-border rounded-lg p-2.5 text-xs outline-none focus:border-hms-accent nrs-med-dose" name="nrs_med_dose[]" placeholder="e.g., 500mg" value="<?php echo htmlspecialchars($m['dose'] ?? ''); ?>">
-                                                        </div>
-                                                        <div class="md:col-span-3">
-                                                            <label class="block text-xxs font-bold text-hms-mid mb-1">Route</label>
-                                                            <select class="w-full border border-hms-border rounded-lg p-2.5 text-xs outline-none focus:border-hms-accent nrs-med-route bg-white" name="nrs_med_route[]">
-                                                                <option value="Oral" <?php echo ($m['route'] ?? '') === 'Oral' ? 'selected' : ''; ?>>Oral (PO)</option>
-                                                                <option value="Intravenous" <?php echo ($m['route'] ?? '') === 'Intravenous' ? 'selected' : ''; ?>>Intravenous (IV)</option>
-                                                                <option value="Intramuscular" <?php echo ($m['route'] ?? '') === 'Intramuscular' ? 'selected' : ''; ?>>Intramuscular (IM)</option>
-                                                                <option value="Subcutaneous" <?php echo ($m['route'] ?? '') === 'Subcutaneous' ? 'selected' : ''; ?>>Subcutaneous (SC)</option>
-                                                                <option value="Topical" <?php echo ($m['route'] ?? '') === 'Topical' ? 'selected' : ''; ?>>Topical</option>
-                                                                <option value="Inhalation" <?php echo ($m['route'] ?? '') === 'Inhalation' ? 'selected' : ''; ?>>Inhalation</option>
-                                                                <option value="Rectal" <?php echo ($m['route'] ?? '') === 'Rectal' ? 'selected' : ''; ?>>Rectal (PR)</option>
-                                                                <option value="Other" <?php echo ($m['route'] ?? '') === 'Other' ? 'selected' : ''; ?>>Other</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="md:col-span-3">
-                                                            <label class="block text-xxs font-bold text-hms-mid mb-1">Time Administered</label>
-                                                            <input type="time" class="w-full border border-hms-border rounded-lg p-2.5 text-xs outline-none focus:border-hms-accent nrs-med-time" name="nrs_med_time[]" value="<?php echo htmlspecialchars($m['time'] ?? ''); ?>">
-                                                        </div>
-                                                        <div class="md:col-span-1">
-                                                            <button type="button" class="w-full border border-red-200 text-red-500 hover:bg-red-500 hover:text-white rounded-lg py-2.5 text-xs font-semibold remove-nrs-med-btn transition duration-150" onclick="this.closest('.nursing-med-row').remove()">&times;</button>
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-xxs font-bold text-hms-muted mb-1">Nursing Notes for this Medication</label>
-                                                        <textarea class="w-full border border-hms-border rounded-lg p-2 text-xs outline-none focus:border-hms-accent nrs-med-notes" name="nrs_med_notes[]" rows="1" placeholder="e.g., Infused over 30 minutes, no adverse reactions observed..."><?php echo htmlspecialchars($m['notes'] ?? ''); ?></textarea>
-                                                    </div>
-                                                </div>
-                                            <?php 
-                                                endforeach;
-                                            endif; 
-                                            ?>
-                                        </div>
-                                        <p class="text-hms-muted text-xxs italic">Click "Add Medication" to log each drug given during this session.</p>
+                                        <span class="text-xs font-semibold px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full" id="top_tolerance_badge">Yes</span>
                                     </div>
 
-                                    <!-- 3.2 Laser Procedure Parameters Table -->
-                                    <div class="bg-white border border-hms-border rounded-xl p-5 mb-4">
+                                    <!-- 6.2.A — Dynamic Treatment Location Parameters Table -->
+                                    <div class="bg-white border border-hms-border rounded-xl p-5 mb-4 shadow-sm">
                                         <h5 class="font-serif font-bold text-hms-accent text-sm mb-1 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:1rem;height:1rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                                            3.2 — Laser Procedure Parameters ("Parameters used")
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                            6.2.A — Laser Procedure Parameters ("Parameters used")
                                         </h5>
                                         <p class="text-hms-muted text-xs mb-3">Add treatment parameter records. Use the quick-add area pills to instantly append preset rows, or click "Add Row".</p>
                                         
@@ -1600,11 +1584,11 @@ include_once __DIR__ . '/../includes/navbar.php';
                                         </div>
                                     </div>
 
-                                    <!-- 3.3 Post-Procedure Clinical Observations -->
-                                    <div class="bg-white border border-hms-border rounded-xl p-5 mb-4">
+                                    <!-- 6.2.B — Observations & Actions -->
+                                    <div class="bg-white border border-hms-border rounded-xl p-5 mb-4 shadow-sm">
                                         <h5 class="font-serif font-bold text-hms-accent text-sm mb-1 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:1rem;height:1rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                                            3.3 — Post-Procedure Observations &amp; Actions
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                            6.2.B — Post-Procedure Observations &amp; Actions
                                         </h5>
                                         <p class="text-hms-muted text-xs mb-3">Document clinical observations and immediate post-treatment interventions.</p>
                                         
@@ -1615,27 +1599,27 @@ include_once __DIR__ . '/../includes/navbar.php';
                                             </div>
                                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                                 <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="obs_procedure_done" name="obs_procedure_done" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['post_procedure_checklist']['procedure_done']) ? 'checked' : ''; ?>>
+                                                    <input type="checkbox" id="obs_procedure_done" name="obs_procedure_done" class="w-4 h-4 accent-hms-accent rounded cursor-pointer" <?php echo !empty($nursing_plan['post_procedure_checklist']['procedure_done']) ? 'checked' : ''; ?>>
                                                     <span>Laser hair reduction done.</span>
                                                 </label>
                                                 <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="obs_erythema_edema" name="obs_erythema_edema" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['post_procedure_checklist']['erythema_edema']) ? 'checked' : ''; ?>>
+                                                    <input type="checkbox" id="obs_erythema_edema" name="obs_erythema_edema" class="w-4 h-4 accent-hms-accent rounded cursor-pointer" <?php echo !empty($nursing_plan['post_procedure_checklist']['erythema_edema']) ? 'checked' : ''; ?>>
                                                     <span>Mild erythema and perifollicular edema noted.</span>
                                                 </label>
                                                 <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="obs_no_complaints" name="obs_no_complaints" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['post_procedure_checklist']['no_complaints']) ? 'checked' : ''; ?>>
+                                                    <input type="checkbox" id="obs_no_complaints" name="obs_no_complaints" class="w-4 h-4 accent-hms-accent rounded cursor-pointer" <?php echo !empty($nursing_plan['post_procedure_checklist']['no_complaints']) ? 'checked' : ''; ?>>
                                                     <span>No complaints of pain or burn sensation.</span>
                                                 </label>
                                                 <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="obs_fucicort_applied" name="obs_fucicort_applied" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['post_procedure_checklist']['fucicort_applied']) ? 'checked' : ''; ?>>
+                                                    <input type="checkbox" id="obs_fucicort_applied" name="obs_fucicort_applied" class="w-4 h-4 accent-hms-accent rounded cursor-pointer" <?php echo !empty($nursing_plan['post_procedure_checklist']['fucicort_applied']) ? 'checked' : ''; ?>>
                                                     <span>Fucicort cream applied.</span>
                                                 </label>
                                                 <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="obs_fucidin_applied" name="obs_fucidin_applied" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['post_procedure_checklist']['fucidin_applied']) ? 'checked' : ''; ?>>
+                                                    <input type="checkbox" id="obs_fucidin_applied" name="obs_fucidin_applied" class="w-4 h-4 accent-hms-accent rounded cursor-pointer" <?php echo !empty($nursing_plan['post_procedure_checklist']['fucidin_applied']) ? 'checked' : ''; ?>>
                                                     <span>Fucidin cream applied.</span>
                                                 </label>
                                                 <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="obs_cold_compress" name="obs_cold_compress" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['post_procedure_checklist']['cold_compress']) ? 'checked' : ''; ?>>
+                                                    <input type="checkbox" id="obs_cold_compress" name="obs_cold_compress" class="w-4 h-4 accent-hms-accent rounded cursor-pointer" <?php echo !empty($nursing_plan['post_procedure_checklist']['cold_compress']) ? 'checked' : ''; ?>>
                                                     <span>Cold compress applied post-treatment.</span>
                                                 </label>
                                             </div>
@@ -1644,64 +1628,25 @@ include_once __DIR__ . '/../includes/navbar.php';
                                         <div>
                                             <label for="nrs_changes_performed" class="block text-xs font-semibold text-hms-mid mb-1">Custom Procedure / Clinical Treatment Notes (Overrides standard checklist if filled)</label>
                                             <textarea id="nrs_changes_performed" name="nrs_changes_performed" rows="3" placeholder="e.g., Laser hair reduction done. Fucicort cream applied. Mild redness noted but settled in 5 mins..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['changes_performed'] ?? ''); ?></textarea>
-                                            <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Special Procedure Applied" in report if filled</span>
-                                        </div>
-                                    </div>
-
-                                    <!-- 3.4 Session Tolerance -->
-                                    <div class="bg-hms-panel border border-hms-border rounded-xl p-5 mb-4">
-                                        <h5 class="font-serif font-bold text-hms-accent text-sm mb-1 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:1rem;height:1rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                                            3.4 — Session Tolerance
-                                        </h5>
-                                        <p class="text-hms-muted text-xs mb-3">Assess and document how the patient tolerated the treatment session overall.</p>
-                                        <div class="bg-white border border-hms-border rounded-xl p-4 mb-4">
-                                            <label class="block text-xs font-semibold text-hms-mid mb-3">Session Tolerance Level</label>
-                                            <div class="flex flex-col sm:flex-row gap-3">
-                                                <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                                                    <input type="radio" name="nrs_tolerance" id="tol_well" value="Tolerated Well" class="w-4 h-4 accent-hms-accent" <?php echo ($nursing_plan['tolerance'] ?? '') === 'Tolerated Well' ? 'checked' : ''; ?>>
-                                                    <span class="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full">✓ Tolerated Well</span>
-                                                </label>
-                                                <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                                                    <input type="radio" name="nrs_tolerance" id="tol_difficulty" value="Tolerated with Difficulty" class="w-4 h-4 accent-hms-accent" <?php echo ($nursing_plan['tolerance'] ?? '') === 'Tolerated with Difficulty' ? 'checked' : ''; ?>>
-                                                    <span class="text-xs font-semibold text-yellow-700 bg-yellow-50 border border-yellow-200 px-3 py-1.5 rounded-full">⚠ Tolerated with Difficulty</span>
-                                                </label>
-                                                <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                                                    <input type="radio" name="nrs_tolerance" id="tol_not" value="Not Tolerated" class="w-4 h-4 accent-hms-accent" <?php echo ($nursing_plan['tolerance'] ?? '') === 'Not Tolerated' ? 'checked' : ''; ?>>
-                                                    <span class="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 rounded-full">✕ Not Tolerated</span>
-                                                </label>
-                                            </div>
-                                            <span class="text-hms-muted text-[10px] block mt-2.5">→ Maps to "Session Tolerance" level in printed report</span>
-                                        </div>
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label for="nrs_tolerance_notes" class="block text-xs font-semibold text-hms-mid mb-1">Session Tolerance Notes</label>
-                                                <textarea id="nrs_tolerance_notes" name="nrs_tolerance_notes" rows="3" placeholder="Describe patient's experience during the session, any adverse reactions, complaints, or events noted..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['tolerance_notes'] ?? ''); ?></textarea>
-                                                <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Session Tolerance (Notes)" in printed report</span>
-                                            </div>
-                                            <div>
-                                                <label for="nrs_post_vitals" class="block text-xs font-semibold text-hms-mid mb-1">Post-Treatment Vitals</label>
-                                                <textarea id="nrs_post_vitals" name="nrs_post_vitals" rows="3" placeholder="e.g., BP 125/82, HR 80 bpm, SpO2 98%, Temperature 36.9°C — Patient stable post-treatment..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['post_vitals'] ?? ''); ?></textarea>
-                                                <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Post-Treatment Vitals" in printed report</span>
-                                            </div>
                                         </div>
                                     </div>
 
                                     <div class="flex justify-between mt-4">
-                                        <button type="button" class="border border-hms-border text-hms-mid hover:bg-gray-50 rounded-lg px-6 py-2.5 text-sm font-semibold transition duration-150" onclick="goToSubTab('nrs-prep-tab')">&larr; Back</button>
+                                        <button type="button" class="border border-hms-border text-hms-mid hover:bg-gray-50 rounded-lg px-6 py-2.5 text-sm font-semibold transition duration-150" onclick="goToSubTab('nrs-prep-tab')">&larr; Back to Pre-Treatment Prep</button>
                                         <button type="button" class="border-0 bg-hms-accent hover:bg-hms-accentDim text-white rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition duration-150" onclick="goToSubTab('nrs-advisory-tab')">Continue to Advisory Measures &rarr;</button>
                                     </div>
                                 </div>
 
-                                <!-- NRS SUB-TAB 4: Advisory Measures -->
+                                <!-- Tab 6.3: Advisory Measures & Discharge Plan -->
                                 <div class="tab-pane fade" id="nrs-advisory-pane" role="tabpanel">
-                                    <div class="bg-hms-panel border border-hms-border rounded-xl p-5 mb-4">
+                                    <div class="bg-hms-panel border border-hms-border rounded-xl p-5 mb-4 shadow-sm">
                                         <h5 class="font-serif font-bold text-hms-accent text-sm mb-1 flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width:1rem;height:1rem;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                                            4. Advisory Measures
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                            6.3 — Advisory Measures &amp; Discharge Plan
                                         </h5>
-                                        <p class="text-hms-muted text-xs mb-4">Document safety, precautionary, and advisory instructions given to the patient and/or caregivers.</p>
+                                        <p class="text-hms-muted text-xs mb-4">Document safety and discharge instructions given to the patient and/or caregivers.</p>
 
+                                        <!-- Safety & Advisory Checklist Grid -->
                                         <div class="bg-white border border-hms-border rounded-xl p-4 mb-4">
                                             <div class="flex justify-between items-center mb-3">
                                                 <label class="block text-xs font-semibold text-hms-mid">Standard Safety &amp; Advisory Checklist</label>
@@ -1710,72 +1655,99 @@ include_once __DIR__ . '/../includes/navbar.php';
                                                     <button type="button" id="btnClearAllAdvisory" class="border border-gray-300 text-gray-500 hover:bg-gray-100 rounded px-2.5 py-1 text-xxs font-semibold transition">Clear All</button>
                                                 </div>
                                             </div>
-                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_fall_prevention" name="adv_fall_prevention" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['fall_prevention']) ? 'checked' : ''; ?>>
-                                                    <span>Fall prevention measures explained</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_medication_schedule" name="adv_medication_schedule" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['medication_schedule']) ? 'checked' : ''; ?>>
-                                                    <span>Medication schedule explained</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_diet_restrictions" name="adv_diet_restrictions" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['diet_restrictions']) ? 'checked' : ''; ?>>
-                                                    <span>Dietary restrictions communicated</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_activity_limits" name="adv_activity_limits" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['activity_limits']) ? 'checked' : ''; ?>>
-                                                    <span>Activity limitations advised</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_wound_care" name="adv_wound_care" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['wound_care']) ? 'checked' : ''; ?>>
-                                                    <span>Wound / site care instructions given</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_red_flags" name="adv_red_flags" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['red_flags']) ? 'checked' : ''; ?>>
-                                                    <span>Red-flag symptoms to watch for explained</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_hydration" name="adv_hydration" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['hydration']) ? 'checked' : ''; ?>>
-                                                    <span>Hydration &amp; fluid intake advised</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_followup_reminder" name="adv_followup_reminder" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['followup_reminder']) ? 'checked' : ''; ?>>
-                                                    <span>Follow-up appointment reminder given</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_emergency_contact" name="adv_emergency_contact" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['emergency_contact']) ? 'checked' : ''; ?>>
-                                                    <span>Emergency contact number provided</span>
-                                                </label>
-                                                <label class="flex items-center gap-2 text-xs text-hms-dark cursor-pointer select-none">
-                                                    <input type="checkbox" id="adv_no_self_medicate" name="adv_no_self_medicate" class="w-4 h-4 accent-hms-accent rounded" <?php echo !empty($nursing_plan['advisory_checklist']['no_self_medicate']) ? 'checked' : ''; ?>>
-                                                    <span>Advised not to self-medicate</span>
-                                                </label>
+                                            
+                                            <!-- Responsive grid container for safety cards -->
+                                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                <!-- 1. Fall prevention -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_fall_prevention" name="adv_fall_prevention" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['fall_prevention']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_fall_prevention" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Fall prevention measures explained</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 2. Medication schedule -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_medication_schedule" name="adv_medication_schedule" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['medication_schedule']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_medication_schedule" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Medication schedule explained</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 3. Dietary restrictions -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_diet_restrictions" name="adv_diet_restrictions" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['diet_restrictions']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_diet_restrictions" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Dietary restrictions communicated</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 4. Activity limitations -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_activity_limits" name="adv_activity_limits" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['activity_limits']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_activity_limits" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Activity limitations advised</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 5. Wound site care -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_wound_care" name="adv_wound_care" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['wound_care']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_wound_care" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Wound / site care instructions given</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 6. Red flag symptoms -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_red_flags" name="adv_red_flags" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['red_flags']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_red_flags" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Red-flag symptoms to watch for explained</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 7. Hydration fluid intake -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_hydration" name="adv_hydration" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['hydration']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_hydration" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Hydration &amp; fluid intake advised</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 8. Follow up reminder -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_followup_reminder" name="adv_followup_reminder" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['followup_reminder']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_followup_reminder" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Follow-up appointment reminder given</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 9. Emergency contact provided -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_emergency_contact" name="adv_emergency_contact" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['emergency_contact']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_emergency_contact" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Emergency contact number provided</label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 10. Not to self medicate -->
+                                                <div class="adv-chk-wrapper bg-white border border-hms-border rounded-xl p-3 flex items-start gap-3 shadow-sm select-none transition hover:border-hms-accent hover:shadow-md">
+                                                    <input type="checkbox" id="adv_no_self_medicate" name="adv_no_self_medicate" class="w-4 h-4 accent-hms-accent rounded mt-0.5 cursor-pointer" <?php echo !empty($nursing_plan['advisory_checklist']['no_self_medicate']) ? 'checked' : ''; ?>>
+                                                    <div class="flex-grow">
+                                                        <label for="adv_no_self_medicate" class="text-xs font-semibold text-hms-dark cursor-pointer block leading-tight">Advised not to self-medicate</label>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <span class="text-hms-muted text-[10px] block mt-3">→ Selected safety/advisory items list under "Post home care instructions" in printed report</span>
                                         </div>
 
-                                        <div class="mb-4">
+                                        <div class="mb-0">
                                             <label for="nrs_advisory_notes" class="block text-xs font-semibold text-hms-mid mb-1">Detailed Advisory Notes</label>
-                                            <textarea id="nrs_advisory_notes" name="nrs_advisory_notes" rows="4" placeholder="Document any specific advisory, safety, or discharge instructions given to the patient or attendant by nursing staff..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['advisory_notes'] ?? ''); ?></textarea>
-                                            <span class="text-hms-muted text-[10px] block mt-1">→ Maps to "Discharge / Advisory Notes" in printed report</span>
-                                        </div>
-
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label for="nrs_advisory_by" class="block text-xs font-semibold text-hms-mid mb-1">Advisory Given By (Nurse)</label>
-                                                <input type="text" id="nrs_advisory_by" name="nrs_advisory_by" placeholder="e.g., Nurse Sana Iqbal" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white" value="<?php echo htmlspecialchars($nursing_plan['advisory_by'] ?? ''); ?>">
-                                                <span class="text-hms-muted text-[10px] block mt-1">→ Maps to Signed By (Nurse) signature in report</span>
-                                            </div>
-                                            <div>
-                                                <label for="nrs_advisory_time" class="block text-xs font-semibold text-hms-mid mb-1">Advisory Completed At</label>
-                                                <input type="time" id="nrs_advisory_time" name="nrs_advisory_time" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10" value="<?php echo htmlspecialchars($nursing_plan['advisory_time'] ?? ''); ?>">
-                                            </div>
+                                            <textarea id="nrs_advisory_notes" name="nrs_advisory_notes" rows="4" placeholder="Document any specific safety or discharge instructions given..." class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 bg-white"><?php echo htmlspecialchars($nursing_plan['advisory_notes'] ?? ''); ?></textarea>
                                         </div>
                                     </div>
 
                                     <div class="flex justify-between mt-4">
-                                        <button type="button" class="border border-hms-border text-hms-mid hover:bg-gray-50 rounded-lg px-6 py-2.5 text-sm font-semibold transition duration-150" onclick="goToSubTab('nrs-treatment-tab')">&larr; Back</button>
+                                        <button type="button" class="border border-hms-border text-hms-mid hover:bg-gray-50 rounded-lg px-6 py-2.5 text-sm font-semibold transition duration-150" onclick="goToSubTab('nrs-treatment-tab')">&larr; Back to Clinical Treatment</button>
                                     </div>
                                 </div>
 
@@ -1859,11 +1831,11 @@ include_once __DIR__ . '/../includes/navbar.php';
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div>
                                             <label for="followup_date" class="block text-xs font-semibold text-hms-mid mb-1">Follow-up Date</label>
-                                            <input type="date" id="followup_date" name="followup_date" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10" min="<?php echo date('Y-m-d'); ?>" value="<?php echo htmlspecialchars($existing_consultation['followup_date'] ?? ''); ?>">
+                                            <input type="<?php echo !empty($existing_consultation['followup_date']) ? 'date' : 'text'; ?>" id="followup_date" name="followup_date" placeholder="Click here" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 cursor-pointer bg-white" min="<?php echo date('Y-m-d'); ?>" value="<?php echo htmlspecialchars($existing_consultation['followup_date'] ?? ''); ?>" onfocus="this.type='date'; if(!this.value){ const d = new Date(); const pad = (n) => String(n).padStart(2, '0'); this.value = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); } try { this.showPicker(); } catch(e) {}" onclick="this.type='date'; if(!this.value){ const d = new Date(); const pad = (n) => String(n).padStart(2, '0'); this.value = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); } try { this.showPicker(); } catch(e) {}" onblur="if(!this.value){ this.type='text'; }">
                                         </div>
                                         <div>
                                             <label for="followup_time" class="block text-xs font-semibold text-hms-mid mb-1">Follow-up Time</label>
-                                            <input type="time" id="followup_time" name="followup_time" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10" value="<?php echo htmlspecialchars(!empty($existing_consultation['followup_time']) ? date('H:i', strtotime($existing_consultation['followup_time'])) : ''); ?>">
+                                            <input type="<?php echo !empty($existing_consultation['followup_time']) ? 'time' : 'text'; ?>" id="followup_time" name="followup_time" placeholder="Click here" class="w-full border border-hms-border rounded-lg p-2.5 text-sm outline-none focus:border-hms-accent focus:ring-2 focus:ring-hms-accent/10 cursor-pointer bg-white" value="<?php echo htmlspecialchars(!empty($existing_consultation['followup_time']) ? date('H:i', strtotime($existing_consultation['followup_time'])) : ''); ?>" onfocus="this.type='time'; if(!this.value){ const d = new Date(); const pad = (n) => String(n).padStart(2, '0'); this.value = pad(d.getHours()) + ':' + pad(d.getMinutes()); } try { this.showPicker(); } catch(e) {}" onclick="this.type='time'; if(!this.value){ const d = new Date(); const pad = (n) => String(n).padStart(2, '0'); this.value = pad(d.getHours()) + ':' + pad(d.getMinutes()); } try { this.showPicker(); } catch(e) {}" onblur="if(!this.value){ this.type='text'; }">
                                         </div>
                                         <div>
                                             <label for="followup_doctor_id" class="block text-xs font-semibold text-hms-mid mb-1">Practitioner / Specialty Referral</label>
@@ -1998,15 +1970,349 @@ include_once __DIR__ . '/../includes/navbar.php';
 
         document.addEventListener('DOMContentLoaded', function() {
             
-            // --- Live Session Timer (Module 9) ---
+            // --- Live Session Timer (Module 9) & Auto-Extension ---
             let seconds = 0;
+            let currentSlots = 1;
+            let lastExtendedSlot = 1;
+            let promptedSlots = {};
             const timerDisplay = document.getElementById('sessionTimer');
+            
+            function autoExtendAppointmentSlot(elapsedSeconds) {
+                const apptIdInput = document.querySelector('input[name="appointment_id"]');
+                const appointmentId = apptIdInput ? apptIdInput.value : null;
+                if (!appointmentId) return;
+
+                fetch('../actions/auto_extend_appointment.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appointment_id: appointmentId,
+                        session_duration: elapsedSeconds
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log('Real-time slot extended successfully:', data);
+                        const timerBadge = document.getElementById('sessionTimerBadge');
+                        if (timerBadge) {
+                            timerBadge.title = `Consultation Session Active Timer - ${data.slots_reserved} slot(s) reserved`;
+                        }
+                    } else {
+                        console.error('Error auto-extending slot:', data.error);
+                    }
+                })
+                .catch(err => {
+                    console.error('Network error during auto-extend:', err);
+                });
+            }
+
+            // Confirm Button for extension modal
+            const confirmBtn = document.getElementById('confirmExtensionBtn');
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', function() {
+                    const upcomingSlot = currentSlots + 1;
+                    const elapsedSeconds = (upcomingSlot - 1) * 1800 + 1;
+                    autoExtendAppointmentSlot(elapsedSeconds);
+                    lastExtendedSlot = upcomingSlot;
+                    promptedSlots[upcomingSlot] = true;
+                    const modal = document.getElementById('extensionModal');
+                    if (modal) modal.classList.add('hidden');
+                });
+            }
+
+            // Cancel Button for extension modal
+            const cancelBtn = document.getElementById('cancelExtensionBtn');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function() {
+                    const upcomingSlot = currentSlots + 1;
+                    promptedSlots[upcomingSlot] = true; // Mark prompted so we don't ask again
+                    const modal = document.getElementById('extensionModal');
+                    if (modal) modal.classList.add('hidden');
+                });
+            }
+
             setInterval(() => {
                 seconds++;
                 const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
                 const secs = String(seconds % 60).padStart(2, '0');
                 timerDisplay.textContent = `${mins}:${secs}`;
+                const durationInput = document.getElementById('session_duration');
+                if (durationInput) {
+                    durationInput.value = seconds;
+                }
+
+                // Check if current slot is about to end (e.g. 2 minutes / 120 seconds before 30 min boundary)
+                const upcomingSlot = currentSlots + 1;
+                const boundarySeconds = currentSlots * 1800;
+
+                if (seconds >= (boundarySeconds - 120) && seconds < boundarySeconds) {
+                    if (!promptedSlots[upcomingSlot] && lastExtendedSlot < upcomingSlot) {
+                        const modal = document.getElementById('extensionModal');
+                        if (modal) {
+                            modal.classList.remove('hidden');
+                        }
+                    }
+                }
+
+                // If they overrun the boundary (seconds > boundarySeconds), update currentSlots
+                if (seconds > boundarySeconds) {
+                    currentSlots = Math.max(1, Math.ceil(seconds / 1800));
+                }
             }, 1000);
+
+            // --- Session Tolerance Checkbox Top Sync ---
+            const topTolerated = document.getElementById('top_session_tolerated');
+            const topBadge = document.getElementById('top_tolerance_badge');
+
+            function syncToleranceFromCheckbox() {
+                if (!topTolerated || !topBadge) return;
+                if (topTolerated.checked) {
+                    topBadge.innerText = "Yes";
+                    topBadge.className = "text-xs font-semibold px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full";
+                } else {
+                    topBadge.innerText = "No";
+                    topBadge.className = "text-xs font-semibold px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-full";
+                }
+            }
+
+            if (topTolerated) {
+                topTolerated.addEventListener('change', syncToleranceFromCheckbox);
+            }
+
+            // Run initial sync
+            syncToleranceFromCheckbox();
+
+            // --- Auto-check Prep & Parameters Table on typing ---
+            let lastAutoProc = null;
+            function autoFillPrepAndParameters(text) {
+                const clean = text.toLowerCase();
+                let matchingProc = null;
+                if (clean.includes("body lift")) {
+                    matchingProc = "body_lift";
+                } else if (clean.includes("laser")) {
+                    matchingProc = "laser";
+                } else if (clean.includes("botox")) {
+                    matchingProc = "botox";
+                }
+                
+                if (!matchingProc || matchingProc === lastAutoProc) return;
+                lastAutoProc = matchingProc;
+                
+                // Check prep checklist boxes
+                if (matchingProc === "body_lift") {
+                    const markingBox = document.getElementById('prep_markings_shaving');
+                    const consentBox = document.getElementById('prep_consent');
+                    const idBox = document.getElementById('prep_id_verified');
+                    const allergyBox = document.getElementById('prep_allergies_checked');
+                    if (markingBox) markingBox.checked = true;
+                    if (consentBox) consentBox.checked = true;
+                    if (idBox) idBox.checked = true;
+                    if (allergyBox) allergyBox.checked = true;
+                    
+                    // Clear parameters table first
+                    const laserParamsTableBody = document.getElementById('laserParamsTableBody');
+                    if (laserParamsTableBody) {
+                        laserParamsTableBody.innerHTML = '';
+                        if (typeof window.addLaserParamRow === 'function') {
+                            window.addLaserParamRow("Abdomen", "None", "N/A", "N/A", "N/A", "Post-op body lift checks");
+                            window.addLaserParamRow("Flanks", "None", "N/A", "N/A", "N/A", "Post-op body lift checks");
+                        }
+                    }
+                } else if (matchingProc === "laser") {
+                    const gogglesBox = document.getElementById('prep_goggles_provided');
+                    const consentBox = document.getElementById('prep_consent');
+                    const idBox = document.getElementById('prep_id_verified');
+                    const allergyBox = document.getElementById('prep_allergies_checked');
+                    if (gogglesBox) gogglesBox.checked = true;
+                    if (consentBox) consentBox.checked = true;
+                    if (idBox) idBox.checked = true;
+                    if (allergyBox) allergyBox.checked = true;
+                    
+                    // Clear parameters table first
+                    const laserParamsTableBody = document.getElementById('laserParamsTableBody');
+                    if (laserParamsTableBody) {
+                        laserParamsTableBody.innerHTML = '';
+                        if (typeof window.addLaserParamRow === 'function') {
+                            window.addLaserParamRow("Underarms", "alex 755nm", "10j/cm2", "18mm", "3ms", "Standard Laser");
+                            window.addLaserParamRow("Full Arms", "alex 755nm", "12j/cm2", "18mm", "3ms", "Standard Laser");
+                        }
+                    }
+                } else if (matchingProc === "botox") {
+                    const consentBox = document.getElementById('prep_consent');
+                    const idBox = document.getElementById('prep_id_verified');
+                    const allergyBox = document.getElementById('prep_allergies_checked');
+                    if (consentBox) consentBox.checked = true;
+                    if (idBox) idBox.checked = true;
+                    if (allergyBox) allergyBox.checked = true;
+                    
+                    // Clear parameters table first
+                    const laserParamsTableBody = document.getElementById('laserParamsTableBody');
+                    if (laserParamsTableBody) {
+                        laserParamsTableBody.innerHTML = '';
+                        if (typeof window.addLaserParamRow === 'function') {
+                            window.addLaserParamRow("Face / Forehead", "Botox Injection", "N/A", "N/A", "N/A", "Wrinkles treatment");
+                        }
+                    }
+                }
+            }
+
+            const narrativeInput = document.getElementById('narrative_diagnosis');
+            if (narrativeInput) {
+                narrativeInput.addEventListener('input', function() {
+                    autoFillPrepAndParameters(this.value);
+                });
+            }
+            const changesPerformedInput = document.getElementById('nrs_changes_performed');
+            if (changesPerformedInput) {
+                changesPerformedInput.addEventListener('input', function() {
+                    autoFillPrepAndParameters(this.value);
+                });
+            }
+
+            // --- Section 6 Clinical Treatment & Nursing Plan Lookups and Rules ---
+            const procedureTemplates = [
+              {
+                "name": "Rhinoplasty / Liposuction / Facelift / Tummy Tuck",
+                "category": "surgical",
+                "pre_prep_checks": ["patient_identity_verified", "consent_signed", "allergies_reviewed", "explained_procedure", "patient_positioned", "emergency_kit_available", "fasting_confirmed", "iv_access_established", "monitoring_equipment_connected", "baseline_vitals_recorded", "required_lab_work_completed", "markings_and_shaving_done"],
+                "advisory_checks": ["wound_site_care", "medication_schedule", "activity_limitations", "red_flag_symptoms", "follow_up_reminder", "not_to_self_medicate", "fall_prevention", "dietary_restrictions"]
+              },
+              {
+                "name": "Botox / Dysport / Dermal Fillers / Sculptra",
+                "category": "injectable",
+                "pre_prep_checks": ["patient_identity_verified", "consent_signed", "allergies_reviewed", "explained_procedure", "patient_positioned", "emergency_kit_available"],
+                "advisory_checks": ["not_to_self_medicate", "follow_up_reminder", "hydration_fluid_intake"]
+              },
+              {
+                "name": "Fractional CO2 Laser / Softlight Laser Peel",
+                "category": "laser",
+                "pre_prep_checks": ["patient_identity_verified", "consent_signed", "allergies_reviewed", "explained_procedure", "patient_positioned", "emergency_kit_available", "protective_goggles_provided"],
+                "advisory_checks": ["wound_site_care", "hydration_fluid_intake", "red_flag_symptoms", "follow_up_reminder"]
+              },
+              {
+                "name": "IPL / Laser Hair Removal",
+                "category": "laser_hair",
+                "pre_prep_checks": ["patient_identity_verified", "consent_signed", "allergies_reviewed", "explained_procedure", "patient_positioned", "emergency_kit_available", "protective_goggles_provided", "markings_and_shaving_done"],
+                "advisory_checks": ["hydration_fluid_intake", "follow_up_reminder"]
+              },
+              {
+                "name": "Mesotherapy / Microneedling / Chemical Peels",
+                "category": "skin_resurfacing",
+                "pre_prep_checks": ["patient_identity_verified", "consent_signed", "allergies_reviewed", "explained_procedure", "patient_positioned", "emergency_kit_available"],
+                "advisory_checks": ["wound_site_care", "hydration_fluid_intake", "follow_up_reminder"]
+              },
+              {
+                "name": "PRP Treatment (Platelet-Rich Plasma)",
+                "category": "prp",
+                "pre_prep_checks": ["patient_identity_verified", "consent_signed", "allergies_reviewed", "explained_procedure", "patient_positioned", "emergency_kit_available", "required_lab_work_completed"],
+                "advisory_checks": ["wound_site_care", "hydration_fluid_intake", "not_to_self_medicate", "follow_up_reminder"]
+              }
+            ];
+
+            const prePrepMapping = {
+              "patient_identity_verified": "prep_id_verified",
+              "consent_signed": "prep_consent",
+              "allergies_reviewed": "prep_allergies_checked",
+              "explained_procedure": "prep_procedure_explained",
+              "patient_positioned": "prep_positioning",
+              "emergency_kit_available": "prep_emergency_kit",
+              "fasting_confirmed": "prep_fasting",
+              "iv_access_established": "prep_iv_access",
+              "monitoring_equipment_connected": "prep_monitoring",
+              "baseline_vitals_recorded": "prep_baseline_vitals",
+              "required_lab_work_completed": "prep_labwork",
+              "markings_and_shaving_done": "prep_markings_shaving",
+              "protective_goggles_provided": "prep_goggles_provided"
+            };
+
+            const advisoryMapping = {
+              "wound_site_care": "adv_wound_care",
+              "medication_schedule": "adv_medication_schedule",
+              "activity_limitations": "adv_activity_limits",
+              "red_flag_symptoms": "adv_red_flags",
+              "follow_up_reminder": "adv_followup_reminder",
+              "not_to_self_medicate": "adv_no_self_medicate",
+              "fall_prevention": "adv_fall_prevention",
+              "dietary_restrictions": "adv_diet_restrictions",
+              "hydration_fluid_intake": "adv_hydration",
+              "emergency_contact_provided": "adv_emergency_contact"
+            };
+
+            window.applyProcedureRules = function(procedureName, isUserChange = false) {
+                const procedure = procedureTemplates.find(p => p.name === procedureName);
+                
+                // Process Pre-Treatment Prep checks
+                for (const [apiKey, elementId] of Object.entries(prePrepMapping)) {
+                    const checkbox = document.getElementById(elementId);
+                    if (!checkbox) continue;
+                    const wrapper = checkbox.closest('.prep-chk-wrapper');
+                    
+                    if (procedure) {
+                        const isIncluded = procedure.pre_prep_checks.includes(apiKey);
+                        if (isIncluded) {
+                            if (wrapper) wrapper.style.display = 'flex';
+                            if (isUserChange) {
+                                checkbox.checked = true;
+                            }
+                        } else {
+                            if (wrapper) wrapper.style.display = 'none';
+                            checkbox.checked = false; // State sanitization: wipe old value
+                        }
+                    } else {
+                        // If no procedure is selected, show all as fallback but do not auto-check
+                        if (wrapper) wrapper.style.display = 'flex';
+                        if (isUserChange) {
+                            checkbox.checked = false;
+                        }
+                    }
+                }
+
+                // Process Advisory checks
+                for (const [apiKey, elementId] of Object.entries(advisoryMapping)) {
+                    const checkbox = document.getElementById(elementId);
+                    if (!checkbox) continue;
+                    const wrapper = checkbox.closest('.adv-chk-wrapper');
+                    
+                    if (apiKey === 'emergency_contact_provided') {
+                        // General fallback indicators are always visible and auto-checked
+                        if (wrapper) wrapper.style.display = 'flex';
+                        checkbox.checked = true;
+                        continue;
+                    }
+
+                    if (procedure) {
+                        const isIncluded = procedure.advisory_checks.includes(apiKey);
+                        if (isIncluded) {
+                            if (wrapper) wrapper.style.display = 'flex';
+                            if (isUserChange) {
+                                checkbox.checked = true;
+                            }
+                        } else {
+                            if (wrapper) wrapper.style.display = 'none';
+                            checkbox.checked = false; // State sanitization: wipe old value
+                        }
+                    } else {
+                        // If no procedure is selected, show all as fallback
+                        if (wrapper) wrapper.style.display = 'flex';
+                        if (isUserChange) {
+                            checkbox.checked = false;
+                        }
+                    }
+                }
+            };
+
+            const procDropdown = document.getElementById('nrs_target_procedure');
+            if (procDropdown) {
+                procDropdown.addEventListener('change', function() {
+                    window.applyProcedureRules(this.value, true);
+                });
+                // Initialize on page load (do not force auto-check to preserve draft state details)
+                window.applyProcedureRules(procDropdown.value, false);
+            }
+
 
             // Intercept form submit to validate required fields on Finalize
             const form = document.getElementById('consultationForm');
@@ -2144,6 +2450,7 @@ include_once __DIR__ . '/../includes/navbar.php';
                     }
                 }
 
+                window.isProgrammaticClick = true;
                 if (matchedId) {
                     const card = document.querySelector(`.symptom-card[data-symptom-id="${matchedId}"]`);
                     if (card && !card.classList.contains('active')) {
@@ -2155,10 +2462,10 @@ include_once __DIR__ . '/../includes/navbar.php';
                         activeCard.click(); // toggle off
                     }
                 }
+                window.isProgrammaticClick = false;
             }
 
             // Sync Narrative Diagnosis to Step 4 visual display
-            const narrativeInput = document.getElementById('narrative_diagnosis');
             const narrativeDisplay = document.getElementById('narrativeDiagnosisDisplay');
 
             function syncNarrative() {
@@ -2333,8 +2640,16 @@ include_once __DIR__ . '/../includes/navbar.php';
                 const destTime = document.getElementById('followup_time');
 
                 if (destDoc) destDoc.value = refDoc;
-                if (destDate) destDate.value = refDateInput.value;
-                if (destTime) destTime.value = refTimeInput.value;
+                if (destDate) {
+                    destDate.value = refDateInput.value;
+                    if (destDate.value) destDate.type = 'date';
+                    else destDate.type = 'text';
+                }
+                if (destTime) {
+                    destTime.value = refTimeInput.value;
+                    if (destTime.value) destTime.type = 'time';
+                    else destTime.type = 'text';
+                }
 
                 // 6. Set submit type to finalize and submit form
                 let submitTypeInput = document.getElementById('submit_type_hidden');
@@ -2759,6 +3074,8 @@ include_once __DIR__ . '/../includes/navbar.php';
                     const symptomId = card.getAttribute('data-symptom-id');
                     const icd = card.getAttribute('data-icd');
                     const desc = card.getAttribute('data-desc');
+                    const isProgrammatic = window.isProgrammaticClick || false;
+                    const narrativeInput = document.getElementById('narrative_diagnosis');
 
                     if (card.classList.contains('active')) {
                         // Deselect
@@ -2767,11 +3084,46 @@ include_once __DIR__ . '/../includes/navbar.php';
                             activeSymptomRows[symptomId].remove();
                             delete activeSymptomRows[symptomId];
                         }
+
+                        // Remove auto-prescribed medications
+                        if (symptomId === 'hair_loss' || symptomId === 'botox') {
+                            document.querySelectorAll(`.prescription-row[data-symptom-ref="${symptomId}"]`).forEach(row => row.remove());
+                        }
+
+                        // Clear narrative diagnosis preset if matches
+                        if (!isProgrammatic && narrativeInput) {
+                            const val = narrativeInput.value.trim();
+                            if (symptomId === 'botox' && val.includes("facial wrinkles/dynamic lines")) {
+                                narrativeInput.value = '';
+                                if (typeof syncNarrative === 'function') syncNarrative();
+                            } else if (symptomId === 'hair_loss' && val.includes("alopecia/hair loss")) {
+                                narrativeInput.value = '';
+                                if (typeof syncNarrative === 'function') syncNarrative();
+                            }
+                        }
                     } else {
                         // Select
                         card.classList.add('active');
                         card.classList.remove('alert-pulse');
                         createPreFilledDiagnosisRow(symptomId, icd, desc);
+
+                        // Set narrative diagnosis preset if matches and not programmatic
+                        if (!isProgrammatic && narrativeInput) {
+                            if (symptomId === 'botox') {
+                                narrativeInput.value = "Patient presented for aesthetic enhancement. Diagnosed with facial wrinkles/dynamic lines. Scheduled for Botox injection treatment.";
+                            } else if (symptomId === 'hair_loss') {
+                                narrativeInput.value = "Patient presented with complaints of hair thinning and hair fall. Diagnosed with alopecia/hair loss. Recommended hair loss treatment regimen.";
+                            }
+                            if (typeof syncNarrative === 'function') syncNarrative();
+                        }
+
+                        // Append auto-prescriptions
+                        if (symptomId === 'botox') {
+                            addPrescriptionRow("Botulinum Toxin Type A (Botox) 100 units", "As directed for wrinkles", "1 session", "Post-injection care: Do not massage areas. Keep upright for 4 hours.", "botox");
+                        } else if (symptomId === 'hair_loss') {
+                            addPrescriptionRow("Minoxidil 5% topical solution", "Apply 1ml twice daily to dry scalp", "90 days", "Massage gently. Wash hands after application.", "hair_loss");
+                            addPrescriptionRow("Biotin 5mg tablets", "1 tablet daily", "90 days", "Take with water.", "hair_loss");
+                        }
                     }
                 });
             });
@@ -3076,9 +3428,12 @@ include_once __DIR__ . '/../includes/navbar.php';
             const prescriptionsContainer = document.getElementById('prescriptionsContainer');
             const addMedicineBtn = document.getElementById('addMedicineBtn');
 
-            function addPrescriptionRow(medName = '', dosage = '', duration = '', instructions = '') {
+            function addPrescriptionRow(medName = '', dosage = '', duration = '', instructions = '', symptomRef = '') {
                 const newRow = document.createElement('div');
                 newRow.className = 'prescription-row border border-hms-border p-4 rounded-xl mb-4 bg-hms-bg';
+                if (symptomRef) {
+                    newRow.setAttribute('data-symptom-ref', symptomRef);
+                }
                 newRow.innerHTML = `
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end mb-3">
                         <div class="md:col-span-4">
@@ -3110,12 +3465,26 @@ include_once __DIR__ . '/../includes/navbar.php';
             });
 
             document.querySelectorAll('.med-pill').forEach(pill => {
+                const originalText = pill.innerText;
+                const originalClass = pill.className;
+                
                 pill.addEventListener('click', function() {
                     const medName = this.getAttribute('data-med');
                     const dosage = this.getAttribute('data-dosage');
                     const duration = this.getAttribute('data-duration');
                     const inst = this.getAttribute('data-inst');
                     addPrescriptionRow(medName, dosage, duration, inst);
+
+                    // Add checkmark visual feedback
+                    pill.innerText = originalText + " Added ✓";
+                    pill.className = "med-pill px-3 py-1.5 bg-green-150 border border-green-300 rounded-full text-xs font-semibold text-green-700 transition duration-150";
+                    pill.disabled = true;
+
+                    setTimeout(() => {
+                        pill.innerText = originalText;
+                        pill.className = originalClass;
+                        pill.disabled = false;
+                    }, 1500);
                 });
             });
 
@@ -3317,4 +3686,33 @@ include_once __DIR__ . '/../includes/navbar.php';
 
         });
     </script>
+
+    <!-- Extension Prompt Modal -->
+    <div id="extensionModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full border border-hms-border">
+                <div class="bg-white px-6 pt-6 pb-4 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-50 text-hms-accent sm:mx-0 sm:h-10 sm:w-10">
+                            <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                            <h3 class="font-serif text-lg font-bold text-hms-dark" id="modal-title">Consultation Time Running Out</h3>
+                            <div class="mt-2">
+                                <p class="text-xs text-hms-mid">Your current 30-minute consultation slot is about to end. Would you like to extend this session by another 30 minutes? This will automatically reserve the next consecutive slot for this patient.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-6 py-4 flex flex-row-reverse gap-2 rounded-b-2xl">
+                    <button type="button" id="confirmExtensionBtn" class="bg-hms-accent hover:bg-hms-accentDim text-white rounded-full px-5 py-2 text-xs font-semibold shadow-sm transition duration-150">Yes, Extend Session</button>
+                    <button type="button" id="cancelExtensionBtn" class="border border-hms-border text-hms-mid hover:bg-gray-200 rounded-full px-5 py-2 text-xs font-semibold transition duration-150">No, Keep Current</button>
+                </div>
+            </div>
+        </div>
+    </div>
 <?php include_once __DIR__ . '/../includes/footer.php'; ?>
