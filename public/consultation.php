@@ -34,7 +34,7 @@ require_once __DIR__ . '/../config/db.php';
 try {
     // 1. Retrieve appointment and patient information
     $stmt = $pdo->prepare("
-        SELECT a.appointment_id, a.appointment_date, a.appointment_time, a.status, a.doctor_id,
+        SELECT a.appointment_id, a.appointment_date, a.appointment_time, a.status, a.doctor_id, a.duration,
                p.patient_id, p.name AS patient_name, p.dob, p.gender
         FROM appointments a
         INNER JOIN patients p ON a.patient_id = p.patient_id
@@ -73,6 +73,12 @@ try {
     $birthDate = new DateTime($appointment['dob']);
     $todayDate = new DateTime();
     $patient_age = $todayDate->diff($birthDate)->y;
+
+    // Allotted slot length (minutes) + computed end time for the session timer UI.
+    $appt_duration   = (int)($appointment['duration'] ?? 30);
+    if ($appt_duration <= 0) $appt_duration = 30;
+    $appt_start_ts   = strtotime($appointment['appointment_date'] . ' ' . $appointment['appointment_time']);
+    $appt_end_label  = date('h:i A', $appt_start_ts + $appt_duration * 60);
 
     // Fetch all doctors for referral purposes
     $stmtDocs = $pdo->query("SELECT doctor_id, name FROM doctors ORDER BY name ASC");
@@ -308,10 +314,40 @@ include_once __DIR__ . '/../includes/navbar.php';
                                 <span><strong>Patient ID:</strong> #<?php echo htmlspecialchars($appointment['patient_id']); ?></span>
                             </div>
                         </div>
-                        <div class="flex items-center gap-3 self-stretch md:self-auto justify-between md:justify-end">
+                        <div class="flex items-center gap-3 self-stretch md:self-auto justify-between md:justify-end flex-wrap">
                             <div class="bg-white text-hms-dark border border-hms-border font-mono text-sm px-4 py-1.5 rounded-full font-bold shadow-sm" id="sessionTimerBadge" title="Consultation Session Active Timer">
                                 Session: <span id="sessionTimer">00:00</span>
                             </div>
+
+                            <!-- Allotted slot + Extend control -->
+                            <div class="relative" id="extendWrap"
+                                 data-duration="<?php echo $appt_duration; ?>"
+                                 data-appt-id="<?php echo $appointment_id; ?>">
+                                <button type="button" id="extendBtn"
+                                        class="flex items-center gap-1.5 bg-white text-hms-accent border border-hms-accent hover:bg-hms-accent hover:text-white rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm transition duration-150"
+                                        title="Extend this consultation if the patient needs more time">
+                                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 2"/></svg>
+                                    <span>Allotted: <span id="allottedMins"><?php echo $appt_duration; ?></span>m</span>
+                                    <span class="opacity-70">&middot; until <span id="allottedUntil"><?php echo $appt_end_label; ?></span></span>
+                                    <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
+                                </button>
+                                <!-- Dropdown -->
+                                <div id="extendMenu" class="hidden absolute right-0 mt-2 w-56 bg-white border border-hms-border rounded-xl shadow-xl z-50 p-2">
+                                    <div class="text-[10px] font-bold text-hms-muted uppercase tracking-wider px-2 py-1">Extend consultation by</div>
+                                    <div class="grid grid-cols-2 gap-1.5 p-1">
+                                        <button type="button" class="extend-opt border border-hms-border hover:bg-hms-panel rounded-lg px-2 py-2 text-xs font-semibold text-hms-dark transition" data-min="15">+ 15 min</button>
+                                        <button type="button" class="extend-opt border border-hms-border hover:bg-hms-panel rounded-lg px-2 py-2 text-xs font-semibold text-hms-dark transition" data-min="30">+ 30 min</button>
+                                        <button type="button" class="extend-opt border border-hms-border hover:bg-hms-panel rounded-lg px-2 py-2 text-xs font-semibold text-hms-dark transition" data-min="45">+ 45 min</button>
+                                        <button type="button" class="extend-opt border border-hms-border hover:bg-hms-panel rounded-lg px-2 py-2 text-xs font-semibold text-hms-dark transition" data-min="60">+ 60 min</button>
+                                    </div>
+                                    <div class="border-t border-hms-border mt-1 pt-2 px-1 flex items-center gap-1.5">
+                                        <input type="number" id="extendCustom" min="5" max="480" step="5" placeholder="Custom" class="w-full border border-hms-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-hms-accent">
+                                        <button type="button" id="extendCustomApply" class="extend-opt bg-hms-accent text-white rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap">Add</button>
+                                    </div>
+                                    <div id="extendHint" class="text-[10px] text-hms-muted px-2 pt-2 leading-snug">Reflects on the reception scheduler and pushes any overlapping next patient.</div>
+                                </div>
+                            </div>
+
                             <span class="bg-white text-hms-dark border border-hms-border px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm">Appointment ID: #<?php echo $appointment_id; ?></span>
                         </div>
                     </div>
@@ -2033,6 +2069,96 @@ include_once __DIR__ . '/../includes/navbar.php';
                     if (modal) modal.classList.add('hidden');
                 });
             }
+
+            // --- Manual "Extend Consultation" control ---
+            (function initExtendControl() {
+                const wrap   = document.getElementById('extendWrap');
+                const btn    = document.getElementById('extendBtn');
+                const menu   = document.getElementById('extendMenu');
+                if (!wrap || !btn || !menu) return;
+
+                const apptId = wrap.getAttribute('data-appt-id');
+
+                function toggleMenu(show) {
+                    menu.classList.toggle('hidden', show === false ? true : (show === true ? false : menu.classList.contains('hidden') ? false : true));
+                }
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    menu.classList.toggle('hidden');
+                });
+                // Close on outside click
+                document.addEventListener('click', function (e) {
+                    if (!wrap.contains(e.target)) menu.classList.add('hidden');
+                });
+
+                // Lightweight toast
+                function toast(msg, kind) {
+                    const t = document.createElement('div');
+                    t.textContent = msg;
+                    t.style.cssText = 'position:fixed;top:18px;right:18px;z-index:9999;max-width:340px;'
+                        + 'padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;'
+                        + 'box-shadow:0 8px 30px rgba(0,0,0,.15);color:#fff;'
+                        + 'background:' + (kind === 'error' ? '#DC2626' : '#16A34A') + ';';
+                    document.body.appendChild(t);
+                    setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; }, 4200);
+                    setTimeout(() => t.remove(), 4700);
+                }
+
+                function applyExtend(minutes) {
+                    minutes = parseInt(minutes, 10);
+                    if (!minutes || minutes < 1) { toast('Enter a valid number of minutes.', 'error'); return; }
+                    menu.classList.add('hidden');
+                    btn.disabled = true;
+
+                    fetch('../actions/extend_consultation.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ appointment_id: apptId, extend_minutes: minutes })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        btn.disabled = false;
+                        if (!data.ok) { toast(data.error || 'Could not extend consultation.', 'error'); return; }
+
+                        // Update the allotted display
+                        const minsEl  = document.getElementById('allottedMins');
+                        const untilEl = document.getElementById('allottedUntil');
+                        if (minsEl)  minsEl.textContent  = data.new_duration;
+                        if (untilEl && data.new_end_time) {
+                            const [h, m] = data.new_end_time.split(':').map(Number);
+                            const d = new Date(); d.setHours(h, m, 0, 0);
+                            untilEl.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        }
+
+                        let msg = `Extended by ${data.extended_minutes} min (now ${data.new_duration} min total).`;
+                        if (data.shifted && data.shifted.length) {
+                            msg += ` ${data.shifted.length} following appointment(s) shifted.`;
+                        } else {
+                            msg += ' No following appointment affected.';
+                        }
+                        if (data.reception_synced) msg += ' Reception scheduler updated.';
+                        toast(msg, 'success');
+                    })
+                    .catch(err => {
+                        btn.disabled = false;
+                        toast('Network error while extending.', 'error');
+                        console.error('extend error', err);
+                    });
+                }
+
+                menu.querySelectorAll('.extend-opt').forEach(function (opt) {
+                    if (opt.id === 'extendCustomApply') return;
+                    opt.addEventListener('click', function () { applyExtend(opt.getAttribute('data-min')); });
+                });
+                const customApply = document.getElementById('extendCustomApply');
+                const customInput = document.getElementById('extendCustom');
+                if (customApply && customInput) {
+                    customApply.addEventListener('click', function () { applyExtend(customInput.value); });
+                    customInput.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter') { e.preventDefault(); applyExtend(customInput.value); }
+                    });
+                }
+            })();
 
             setInterval(() => {
                 seconds++;
